@@ -1,0 +1,7 @@
+model=arm64
+system=macOS-26.5.1-arm64-arm-64bit
+python=3.9.6
+threads=8
+reference_host=MacBook Pro Mac17,2; Apple M5; 10 cores (4 performance, 6 efficiency); 32 GB; macOS 26.5.1 (25F80)
+software=Apple clang 17.0.6.4.2; C++17; -O3 -ffast-math; pthreads
+dataset_metrics=Pillow 11.3.0; NumPy available in bundled runtime

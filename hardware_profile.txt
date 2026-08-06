@@ -1,0 +1,15 @@
+Model Name: MacBook Pro
+Model Identifier: Mac17,2
+Model Number: MJ3D4LL/A
+Chip: Apple M5
+Total Number of Cores: 10 (4 performance / Super, 6 efficiency)
+Memory: 32 GB
+Operating System: macOS 26.5.1 (25F80)
+Kernel: Darwin 25.5.0 arm64
+Compiler: Apple clang 17.0.6.4.2, arm64-apple-darwin25.5.0
+Benchmark worker threads: 8 (fixed for all reported CAPS measurements)
+Available CPU cores observed by sysctl: 10
+GPU/accelerator use: none; no Metal, CUDA, integrated-GPU compute, or remote service
+Timing scope: resident RGB buffer through analysis, pyramid, coefficient selection, quantization,
+entropy coding, and in-memory encoded byte vector. CLI PPM read and output-file write are outside
+the encode timer; the public API performs no file I/O.

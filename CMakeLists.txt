@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+project(brushie LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+add_library(brushie STATIC src/codec.cpp)
+target_include_directories(brushie PUBLIC include)
+target_compile_options(brushie PRIVATE -O3 -ffast-math -Wall -Wextra -Wpedantic)
+add_executable(brushie_cli src/main.cpp)
+target_link_libraries(brushie_cli PRIVATE brushie)
+set_target_properties(brushie_cli PROPERTIES OUTPUT_NAME brushie)

@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+*.o
+*.a
+
+# Nested web app (separate repo)
+web/
+
+# Large datasets (download separately; see datasets/README.md)
+datasets/div2k/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+
+# Scratch
+/tmp/
