@@ -24,7 +24,7 @@ overflow, unknown version, and checksum failures.
 | 16 | 2 | number of detail pyramid levels (luma) |
 | 18 | 2 | reserved (0) |
 | 20 | 1 | quality 1..100 |
-| 21 | 1 | channel count = 3 |
+| 21 | 1 | channel count: 3 = RGB (Y, Co, Cg), 4 = RGBA (adds alpha) |
 | 22 | 2 | reserved |
 | 24 | 4 | base LL width (luma) |
 | 28 | 4 | base LL height (luma) |
@@ -86,6 +86,14 @@ same prediction when reconstructing.
 All coefficient planes are implicitly initialized to zero, so an all-zero
 band is omitted entirely. Quantization is midtread rounding to the nearest
 `step`; the decoder reconstructs `q * step` exactly.
+
+## Alpha (RGBA)
+
+When channel count is 4, channel 3 is alpha. It is coded at full resolution
+(no chroma-style subsampling) with the luma walk and luma quantization steps,
+so hard transparency edges stay crisp. The stream otherwise behaves like an
+RGB stream: chunks for channel 3 use luma band geometry, and the decoder
+outputs four bytes per pixel.
 
 ## Chroma 4:2:0
 

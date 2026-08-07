@@ -130,5 +130,39 @@ int main() {
     assert(brushie::encode({src.data(), w, h, 0}, options, b, &error));
     assert(a.bytes == b.bytes);
   }
+  {
+    // RGBA lossless round-trip (alpha channel, channel count 4).
+    const unsigned w = 97, h = 63;
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 4);
+    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
+      const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 4;
+      src[i] = static_cast<std::uint8_t>((x * 13 + y) & 255);
+      src[i + 1] = static_cast<std::uint8_t>((x + y * 11) & 255);
+      src[i + 2] = static_cast<std::uint8_t>(((x ^ y) * 5) & 255);
+      src[i + 3] = static_cast<std::uint8_t>((x < w / 2) ? 255 : 0);  // hard alpha edge
+    }
+    brushie::EncodeOptions options;
+    options.quality = 100;
+    options.threads = 4;
+    brushie::EncodedImage encoded;
+    std::string error;
+    assert(brushie::encode({src.data(), w, h, 0, 4}, options, encoded, &error));
+    std::vector<std::uint8_t> dst;
+    assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h, dst, -1, &error));
+    assert(dst.size() == src.size());
+    if (dst != src) {
+      std::size_t nbad = 0;
+      for (std::size_t i = 0; i < src.size(); ++i)
+        if (src[i] != dst[i]) { if (nbad++ < 10) std::cerr << "rgba diff " << i << " " << (int)src[i] << " " << (int)dst[i] << "\n"; }
+      std::cerr << "rgba nbad=" << nbad << "\n";
+      return 1;
+    }
+    // Lossy RGBA round-trip must succeed with correct output size.
+    options.quality = 50;
+    assert(brushie::encode({src.data(), w, h, 0, 4}, options, encoded, &error));
+    assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h, dst, -1, &error));
+    assert(dst.size() == src.size());
+    assert(encoded.bytes[21] == 4);
+  }
   std::cout << "codec tests passed\n";
 }

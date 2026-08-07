@@ -45,14 +45,20 @@ Where CMake is not installed, the equivalent build is:
 ```sh
 mkdir -p build
 clang++ -std=c++17 -O3 -ffast-math -Iinclude src/codec.cpp src/main.cpp -o build/brushie -pthread
+# PNG I/O (optional): add -DBRUSHIE_HAVE_PNG and link libpng
 ```
 
 ## Use
 
+The CLI reads and writes PPM, and PNG (RGB or RGBA) when built with libpng:
+
 ```sh
-build/brushie encode input.ppm output.brbr 45 8 64
-build/brushie decode output.brbr output.ppm 4096 4096 -1
+build/brushie encode input.png output.brbr 45 8 64
+build/brushie decode output.brbr output.png 4096 4096 -1
 ```
+
+RGBA PNGs round-trip losslessly at quality 100 (alpha is coded at full
+resolution); at lossy qualities the alpha channel keeps hard edges.
 
 `decode ... 0` emits the coarse LL layer only. `-1` emits every available
 layer. The decoder may request any output width and height; it reconstructs

@@ -8,10 +8,11 @@
 namespace brushie {
 
 struct ImageView {
-  const std::uint8_t* rgb = nullptr;
+  const std::uint8_t* rgb = nullptr;  // RGB8 (channels=3) or RGBA8 (channels=4)
   std::uint32_t width = 0;
   std::uint32_t height = 0;
-  std::size_t stride = 0;  // bytes between rows; zero means width * 3.
+  std::size_t stride = 0;  // bytes between rows; zero means width * channels.
+  std::uint8_t channels = 3;  // 3 = RGB, 4 = RGBA (alpha coded losslessly-ish)
 };
 
 struct EncodeOptions {
@@ -48,7 +49,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
 
 // max_progressive_layer: -1 decodes all layers; 0 is the base LL layer; a
 // positive value admits that many coarse-to-fine detail layers. The decoder
-// always produces exactly output_width * output_height RGB8 pixels.
+// produces exactly output_width * output_height * channels bytes, where
+// channels (3 or 4) is read from the stream header.
 bool decode(const std::uint8_t* data, std::size_t size,
             std::uint32_t output_width, std::uint32_t output_height,
             std::vector<std::uint8_t>& rgb,

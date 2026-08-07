@@ -169,17 +169,18 @@ static void inverse_level(const std::vector<std::int32_t>& low,
 }
 
 static void input_planes(const ImageView& image,
-                         std::array<std::vector<std::int32_t>, 3>& planes,
+                         std::array<std::vector<std::int32_t>, 4>& planes,
                          std::uint32_t threads) {
-  const std::size_t stride = image.stride ? image.stride : static_cast<std::size_t>(image.width) * 3;
+  const unsigned channels = image.channels == 4 ? 4u : 3u;
+  const std::size_t stride = image.stride ? image.stride : static_cast<std::size_t>(image.width) * channels;
   const std::size_t count = static_cast<std::size_t>(image.width) * image.height;
-  for (auto& p : planes) p.resize(count);
+  for (unsigned c = 0; c < 4; ++c) planes[c].resize(count);
   parallel_for(image.height, threads, [&](std::size_t yy) {
     const std::uint8_t* row = image.rgb + yy * stride;
     for (std::uint32_t x = 0; x < image.width; ++x) {
-      const int r = row[x * 3 + 0];
-      const int g = row[x * 3 + 1];
-      const int b = row[x * 3 + 2];
+      const int r = row[x * channels + 0];
+      const int g = row[x * channels + 1];
+      const int b = row[x * channels + 2];
       const int co = r - b;
       const int t = b + static_cast<int>(floor_div(co, 2));
       const int cg = g - t;
@@ -188,6 +189,7 @@ static void input_planes(const ImageView& image,
       planes[0][i] = y;
       planes[1][i] = co;
       planes[2][i] = cg;
+      planes[3][i] = channels == 4 ? row[x * channels + 3] : 0;
     }
   });
 }
@@ -205,12 +207,13 @@ static std::uint8_t clamp_u8(std::int64_t value) {
   return static_cast<std::uint8_t>(std::max<std::int64_t>(0, std::min<std::int64_t>(255, value)));
 }
 
-static void output_rgb(const std::array<std::vector<std::int32_t>, 3>& planes,
+static void output_rgb(const std::array<std::vector<std::int32_t>, 4>& planes,
                        std::uint32_t w, std::uint32_t h,
                        std::uint32_t out_w, std::uint32_t out_h,
-                       std::vector<std::uint8_t>& rgb,
+                       std::vector<std::uint8_t>& rgb, unsigned channels,
                        std::uint32_t threads) {
-  rgb.resize(static_cast<std::size_t>(out_w) * out_h * 3);
+  const unsigned bpp = channels == 4 ? 4u : 3u;
+  rgb.resize(static_cast<std::size_t>(out_w) * out_h * bpp);
   if (w == out_w && h == out_h) {
     parallel_for(out_h, threads, [&](std::size_t yy) {
       for (std::uint32_t xx = 0; xx < out_w; ++xx) {
@@ -221,10 +224,12 @@ static void output_rgb(const std::array<std::vector<std::int32_t>, 3>& planes,
         const std::int64_t g = cg + t;
         const std::int64_t b = t - floor_div(co, 2);
         const std::int64_t r = co + b;
-        const std::size_t i = (yy * out_w + xx) * 3;
+        const std::size_t i = (yy * out_w + xx) * bpp;
         rgb[i + 0] = clamp_u8(r);
         rgb[i + 1] = clamp_u8(g);
         rgb[i + 2] = clamp_u8(b);
+        if (channels == 4)
+          rgb[i + 3] = clamp_u8(planes[3][yy * w + xx]);
       }
     });
     return;
@@ -240,6 +245,7 @@ static void output_rgb(const std::array<std::vector<std::int32_t>, 3>& planes,
       const std::uint32_t x1 = std::min(w - 1, x0 + 1);
       const double fx = sx - x0;
       std::int32_t c[3] = {0, 0, 0};
+      std::int32_t ca = 0;
       for (int k = 0; k < 3; ++k) {
         const auto& p = planes[k];
         const double a = p[static_cast<std::size_t>(y0) * w + x0] * (1.0 - fx) +
@@ -248,15 +254,24 @@ static void output_rgb(const std::array<std::vector<std::int32_t>, 3>& planes,
                          p[static_cast<std::size_t>(y1) * w + x1] * fx;
         c[k] = static_cast<std::int32_t>(std::llround(a * (1.0 - fy) + b * fy));
       }
+      if (channels == 4) {
+        const auto& p = planes[3];
+        const double a = p[static_cast<std::size_t>(y0) * w + x0] * (1.0 - fx) +
+                         p[static_cast<std::size_t>(y0) * w + x1] * fx;
+        const double b = p[static_cast<std::size_t>(y1) * w + x0] * (1.0 - fx) +
+                         p[static_cast<std::size_t>(y1) * w + x1] * fx;
+        ca = static_cast<std::int32_t>(std::llround(a * (1.0 - fy) + b * fy));
+      }
       const std::int64_t yv = c[0], co = c[1], cg = c[2];
       const std::int64_t t = yv - floor_div(cg, 2);
       const std::int64_t g = cg + t;
       const std::int64_t b = t - floor_div(co, 2);
       const std::int64_t r = co + b;
-      const std::size_t i = (yy * out_w + xx) * 3;
+      const std::size_t i = (yy * out_w + xx) * bpp;
       rgb[i + 0] = clamp_u8(r);
       rgb[i + 1] = clamp_u8(g);
       rgb[i + 2] = clamp_u8(b);
+      if (channels == 4) rgb[i + 3] = clamp_u8(ca);
     }
   });
 }
@@ -1014,8 +1029,9 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     return false;
   }
   const bool subsample_chroma = effective.quality < 95;
+  const bool has_alpha = image.channels == 4;
 
-  std::array<std::vector<std::int32_t>, 3> planes;
+  std::array<std::vector<std::int32_t>, 4> planes;
   input_planes(image, planes, effective.threads);
   std::uint32_t cw = image.width, ch = image.height;
   if (subsample_chroma) {
@@ -1023,10 +1039,12 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     downsample_2x(planes[2], image.width, image.height, cw, ch);
   }
 
-  BandPyramid pyr0, pyr1, pyr2;
+  BandPyramid pyr0, pyr1, pyr2, pyr3;
   build_band_pyramid(planes[0], image.width, image.height, effective.threads, pyr0);
   build_band_pyramid(planes[1], cw, ch, effective.threads, pyr1);
   build_band_pyramid(planes[2], cw, ch, effective.threads, pyr2);
+  if (has_alpha)
+    build_band_pyramid(planes[3], image.width, image.height, effective.threads, pyr3);
 
   // Collect one band reference per (layer, band, channel) in coarse-to-fine
   // order so that a decoder can stop after any progressive layer.
@@ -1056,6 +1074,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   add_base(pyr0.base, pyr0.base_width, pyr0.base_height, 0);
   add_base(pyr1.base, pyr1.base_width, pyr1.base_height, 1);
   add_base(pyr2.base, pyr2.base_width, pyr2.base_height, 2);
+  if (has_alpha) add_base(pyr3.base, pyr3.base_width, pyr3.base_height, 3);
 
   const std::uint32_t L = static_cast<std::uint32_t>(pyr0.levels.size());
   const std::uint32_t CL = static_cast<std::uint32_t>(pyr1.levels.size());
@@ -1093,6 +1112,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     add_details(pyr0, 0);
     add_details(pyr1, 1);
     add_details(pyr2, 2);
+    if (has_alpha) add_details(pyr3, 3);
   }
 
   std::vector<Chunk> chunks(refs.size());
@@ -1145,7 +1165,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   put_u16(output.bytes, 16, static_cast<std::uint16_t>(pyr0.levels.size()));
   put_u16(output.bytes, 18, 0);  // v2 bands are whole-band streams; tile is unused
   output.bytes[20] = effective.quality;
-  output.bytes[21] = 3;
+  output.bytes[21] = has_alpha ? 4 : 3;
   put_u32(output.bytes, 24, pyr0.base_width);
   put_u32(output.bytes, 28, pyr0.base_height);
   put_u32(output.bytes, 32, static_cast<std::uint32_t>(ordered.size()));
@@ -1275,7 +1295,12 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
     cur_w = lev.w; cur_h = lev.h;
     if (cur_w >= output_width && cur_h >= output_height) break;
   }
-  output_rgb(reconstructed, cur_w, cur_h, output_width, output_height, rgb, 8);
+  std::array<std::vector<std::int32_t>, 4> rec4;
+  rec4[0] = std::move(reconstructed[0]);
+  rec4[1] = std::move(reconstructed[1]);
+  rec4[2] = std::move(reconstructed[2]);
+  rec4[3].assign(static_cast<std::size_t>(cur_w) * cur_h, 0);
+  output_rgb(rec4, cur_w, cur_h, output_width, output_height, rgb, 3, 8);
   return true;
 }
 
@@ -1291,6 +1316,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   const std::uint32_t chunk_count = get_u32(data + 32), dir_bytes = get_u32(data + 36);
   const std::uint64_t data_offset = get_u64(data + 40);
   const std::uint32_t c_base_w = get_u32(data + 48), c_base_h = get_u32(data + 52);
+  const unsigned channels = data[21] == 4 ? 4u : 3u;
   if (src_w == 0 || src_h == 0 || src_w > kMaxDimension || src_h > kMaxDimension ||
       levels > 16 || chunk_count > kMaxChunks ||
       dir_bytes != static_cast<std::uint64_t>(chunk_count) * kDirectoryBytes ||
@@ -1315,9 +1341,10 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     }
     return {cw, chh};
   };
-  std::vector<BandLevel> shapes0, shapes1, shapes2;
+  std::vector<BandLevel> shapes0, shapes1, shapes2, shapes3;
   std::uint32_t c_in_w = src_w, c_in_h = src_h;
   const auto luma_base = walk_shapes(src_w, src_h, levels, shapes0);
+  if (channels == 4) walk_shapes(src_w, src_h, levels, shapes3);
   if (luma_base.first != base_w || luma_base.second != base_h) {
     fail(error, "base dimensions do not match pyramid");
     return false;
@@ -1360,10 +1387,11 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     walk_shapes(src_w, src_h, levels, shapes1);
     walk_shapes(src_w, src_h, levels, shapes2);
   }
-  std::array<std::vector<std::int32_t>, 3> base;
+  std::array<std::vector<std::int32_t>, 4> base;
   base[0].assign(static_cast<std::size_t>(base_w) * base_h, 0);
   base[1].assign(static_cast<std::size_t>(ch_base_w) * ch_base_h, 0);
   base[2].assign(static_cast<std::size_t>(ch_base_w) * ch_base_h, 0);
+  base[3].assign(static_cast<std::size_t>(base_w) * base_h, 0);
   auto allocate_levels = [](std::vector<BandLevel>& vec) {
     for (auto& lev : vec) {
       lev.detail[0].assign(static_cast<std::size_t>(lev.w / 2) * lev.lh, 0);
@@ -1374,6 +1402,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   allocate_levels(shapes0);
   allocate_levels(shapes1);
   allocate_levels(shapes2);
+  if (channels == 4) allocate_levels(shapes3);
 
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
@@ -1387,7 +1416,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     const std::uint64_t offset = get_u64(d + 20);
     const std::uint32_t payload_size = get_u32(d + 28), count = get_u32(d + 32);
     const std::uint32_t checksum = get_u32(d + 36);
-    if (channel >= 3 || band > 3 || mode != 3 || step == 0 || tw == 0 || th == 0 ||
+    if (channel >= channels || band > 3 || mode != 3 || step == 0 || tw == 0 || th == 0 ||
         count != static_cast<std::uint64_t>(tw) * th ||
         offset < data_offset || offset > size || payload_size > size - offset ||
         layer > levels) {
@@ -1396,20 +1425,21 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     }
     if (layer > static_cast<std::uint16_t>(std::max(0, highest_layer))) continue;
     std::vector<BandLevel>& shapes =
-        channel == 0 ? shapes0 : (channel == 1 ? shapes1 : shapes2);
+        channel == 0 ? shapes0 : (channel == 1 ? shapes1 : (channel == 2 ? shapes2 : shapes3));
     std::int32_t* destination = nullptr;
     std::uint32_t stride = 0, band_w = 0, band_h = 0;
     if (layer == 0) {
-      if (band != 0 || x != 0 || y != 0 ||
-          tw != (channel == 0 ? base_w : ch_base_w) ||
-          th != (channel == 0 ? base_h : ch_base_h)) {
+      // Channel 3 (alpha) is coded at full resolution like channel 0.
+      const std::uint32_t b_w = channel <= 1 || channel == 3 ? base_w : ch_base_w;
+      const std::uint32_t b_h = channel <= 1 || channel == 3 ? base_h : ch_base_h;
+      if (band != 0 || x != 0 || y != 0 || tw != b_w || th != b_h) {
         fail(error, "base chunk out of bounds");
         return false;
       }
       destination = base[channel].data();
-      stride = channel == 0 ? base_w : ch_base_w;
-      band_w = stride;
-      band_h = channel == 0 ? base_h : ch_base_h;
+      stride = b_w;
+      band_w = b_w;
+      band_h = b_h;
     } else {
       if (band == 0 || layer > shapes.size()) {
         fail(error, "detail layer is invalid");
@@ -1437,10 +1467,11 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
   }
 
-  std::array<std::vector<std::int32_t>, 3> rec;
+  std::array<std::vector<std::int32_t>, 4> rec;
   rec[0] = std::move(base[0]);
   rec[1] = std::move(base[1]);
   rec[2] = std::move(base[2]);
+  rec[3] = std::move(base[3]);
   for (std::size_t ri = shapes0.size(); ri-- > 0;) {
     const BandLevel& lev = shapes0[ri];
     std::vector<std::int32_t> next;
@@ -1459,6 +1490,14 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     inverse_level(rec[2], lev.detail, lev.w, lev.h, n2, 8);
     rec[2] = std::move(n2);
   }
+  if (channels == 4) {
+    for (std::size_t ri = shapes3.size(); ri-- > 0;) {
+      const BandLevel& lev = shapes3[ri];
+      std::vector<std::int32_t> n3;
+      inverse_level(rec[3], lev.detail, lev.w, lev.h, n3, 8);
+      rec[3] = std::move(n3);
+    }
+  }
   if (subsampled) {
     std::vector<std::int32_t> up1, up2;
     upsample_plane(rec[1], c_in_w, c_in_h, src_w, src_h, up1);
@@ -1466,7 +1505,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     rec[1] = std::move(up1);
     rec[2] = std::move(up2);
   }
-  output_rgb(rec, src_w, src_h, output_width, output_height, rgb, 8);
+  output_rgb(rec, src_w, src_h, output_width, output_height, rgb, channels, 8);
   return true;
 }
 
