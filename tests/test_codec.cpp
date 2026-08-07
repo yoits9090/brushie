@@ -70,5 +70,65 @@ int main() {
                            decoded, -1, &error));
     assert(decoded == black);
   }
+  {
+    // Lossy round-trip at multiple operating points, including the 4:2:0
+    // chroma path (quality < 95) and odd dimensions.
+    for (const auto q : {20u, 35u, 50u, 70u, 82u, 90u, 100u}) {
+      const unsigned w = 129, h = 131;
+      std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
+      for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
+        const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 3;
+        src[i] = static_cast<std::uint8_t>((x * 17 + y * 3 + q) & 255);
+        src[i + 1] = static_cast<std::uint8_t>((x * 7 + y * 13 + 2 * q) & 255);
+        src[i + 2] = static_cast<std::uint8_t>(((x ^ y) * 11 + 3 * q) & 255);
+      }
+      brushie::EncodeOptions options;
+      options.quality = static_cast<std::uint8_t>(q);
+      options.threads = 4;
+      brushie::EncodedImage encoded;
+      std::string error;
+      assert(brushie::encode({src.data(), w, h, 0}, options, encoded, &error));
+      std::vector<std::uint8_t> dst;
+      assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h, dst, -1, &error));
+      assert(dst.size() == src.size());
+      if (q == 100 && dst != src) {
+        std::cerr << "lossless mismatch at " << w << "x" << h << "\n";
+        return 1;
+      }
+      // Progressive prefix decode must succeed at every layer.
+      for (int layer = 0; layer <= static_cast<int>(encoded.stats.pyramid_levels); ++layer) {
+        std::vector<std::uint8_t> prefix;
+        assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h,
+                               prefix, layer, &error));
+        assert(prefix.size() == src.size());
+      }
+      // Scaled decode must succeed.
+      std::vector<std::uint8_t> scaled;
+      assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), 31, 23,
+                             scaled, -1, &error));
+      assert(scaled.size() == 31u * 23u * 3u);
+    }
+  }
+  {
+    // Deterministic sanity: the same input and options produce a bit-identical
+    // stream (the range coder must not depend on thread scheduling).
+    const unsigned w = 256, h = 192;
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
+    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
+      const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 3;
+      src[i] = static_cast<std::uint8_t>((x * 5 + y) & 255);
+      src[i + 1] = static_cast<std::uint8_t>((x + y * 9) & 255);
+      src[i + 2] = static_cast<std::uint8_t>(((x * 3) ^ (y * 7)) & 255);
+    }
+    brushie::EncodeOptions options;
+    options.quality = 70;
+    options.threads = 8;
+    brushie::EncodedImage a, b;
+    std::string error;
+    assert(brushie::encode({src.data(), w, h, 0}, options, a, &error));
+    options.threads = 1;
+    assert(brushie::encode({src.data(), w, h, 0}, options, b, &error));
+    assert(a.bytes == b.bytes);
+  }
   std::cout << "codec tests passed\n";
 }
