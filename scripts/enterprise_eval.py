@@ -353,6 +353,67 @@ def run_pillow_codec(
         )
 
 
+def run_jpeg2000(
+    ffmpeg: str,
+    temp: Path,
+    stem: str,
+    ppm: Path,
+    original: np.ndarray,
+    sample: dict[str, object],
+    rows: list[dict[str, object]],
+) -> None:
+    # JPEG 2000 (openjpeg) via ffmpeg: the classic wavelet codec with RDO and
+    # bitplane entropy coding; the natural wavelet incumbent to beat.
+    # ffmpeg's jpeg2000 -q:v is a quantization scale: higher = smaller.
+    for qscale in (100, 160, 250, 400, 600, 900, 1300, 1900, 2800, 4200, 6200):
+        encoded = temp / f"{stem}.j2k{qscale}.jp2"
+        output = temp / f"{stem}.j2k{qscale}.jp2.ppm"
+        start = time.perf_counter()
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y", "-loglevel", "error",
+                "-i", str(ppm),
+                "-frames:v", "1",
+                "-c:v", "jpeg2000",
+                "-compression_level", "5",
+                "-q:v", str(qscale),
+                str(encoded),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        encode_ms = (time.perf_counter() - start) * 1000
+        start = time.perf_counter()
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y", "-loglevel", "error",
+                "-i", str(encoded),
+                "-f", "image2", "-pix_fmt", "rgb24",
+                str(output),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        decode_ms = (time.perf_counter() - start) * 1000
+        rows.append(
+            candidate(
+                "JPEG2000",
+                f"qscale={qscale}",
+                encoded,
+                original,
+                decoded_array(output),
+                encode_ms,
+                decode_ms,
+                sample,
+                "ffmpeg/openjpeg wall time including process and file I/O",
+            )
+        )
+
+
 def run_avif(
     ffmpeg: str,
     temp: Path,
@@ -679,6 +740,15 @@ def main() -> None:
                 )
                 if ffmpeg:
                     run_avif(
+                        ffmpeg,
+                        temp,
+                        stem,
+                        ppm,
+                        original,
+                        sample,
+                        candidates,
+                    )
+                    run_jpeg2000(
                         ffmpeg,
                         temp,
                         stem,

@@ -102,3 +102,22 @@ AV1/JPEG-XL win with tools Brushie lacks:
 Benchmarks to beat next: jpegli (beats WebP) at .970-.995, then AVIF, then
 libjxl default-effort. Validation must move from the MS-SSIM proxy to
 SSIMULACRA2/Butteraugli + blinded human tests before any customer claim.
+
+## Brushie vs JPEG 2000 (measured this session)
+
+Added ffmpeg/openjpeg JPEG 2000 to the eval harness (scripts/enterprise_eval.py).
+Per-sample at the .970 gate (512px preview, quick profile):
+
+| Sample | CAPS | JPEG2000 (openjpeg) | AVIF |
+|---|---:|---:|---:|
+| photo_01 | 11,887 | 26,126 | 8,131 |
+| photo_02 | 7,924 | 8,412 | 5,804 |
+| chat_ui | 4,785 | 4,091 | 1,345 |
+| meme_card | 3,572 | 2,850 | 1,098 |
+
+Brushie beats openjpeg's JPEG 2000 by 1.1-2.2x on photographs, while openjpeg
+wins by 15-20% on smooth synthetic content (chat/meme). This localizes the
+remaining work precisely: Brushie's low-frequency/smooth-region coding
+(base LL + coarse levels) is ~15-20% behind a mature bitplane coder there,
+while its photo coding is already ahead. The text/UI gap to AVIF (3.8x) is
+unchanged and remains the biggest structural target (roadmap M7).
