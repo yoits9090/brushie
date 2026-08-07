@@ -94,3 +94,23 @@ for UI/meme content, but both photos require the complete stream to reach the
 
 Old `enterprise_eval_*` CSVs remain historical artifacts and must not be used
 for competitive claims. New reports must state `harness=v3-windowed`.
+
+## Post-audit tuned result (current)
+
+After committing the honest baseline, three corrected-metric codec changes
+were made and cleanly rerun from SHA `012f74a` (3,323 candidates, all 4/4):
+
+1. q95+ coarseness exponent 0.8 removes the q99→lossless cliff;
+2. encoder competes self-described base targets 32/64 per quality;
+3. delivery/high-tier diagonal+chroma weights are separately tuned.
+
+| Gate | AVIF | WebP | strong JPEG | JPEG 2000 | CAPS tuned |
+|---:|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
+
+vs the corrected baseline CAPS: -5.1%, -2.8%, -50.3%. At .995 CAPS now beats
+WebP 38% and JPEG 2000 13%, but remains 22% larger than AVIF and 19% larger
+than strong JPEG. At .970 it is within 6-7% of JPEG/JPEG2000 but still far
+behind WebP/AVIF. `harness_v3_tuned_quick_*` is the current reference output.

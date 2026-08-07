@@ -22,14 +22,16 @@ all codecs 4/4 coverage):
 
 | Windowed MS-SSIM gate | AVIF | WebP | JPEG | JPEG 2000 | CAPS |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
 
-CAPS currently trails every listed codec at .970/.985; at .995 it trails
-AVIF/JPEG by 2.4x and WebP by 19%. This is the optimization north star, not a
-customer claim. See [docs/harness_v3.md](docs/harness_v3.md) and the clean
-`harness_v3_final_quick_manifest.json` (git SHA `0561782`, metric
+Post-audit tuning (quality-adaptive high-tier allocation + 32/64 base-mode
+competition + corrected diagonal/chroma weights) cuts CAPS 5.1%/.970,
+2.8%/.985, and 50.3%/.995. CAPS now beats JPEG 2000 at .985/.995 and WebP at
+.995, while remaining 6-7% behind JPEG/J2K at .970 and 19-22% behind
+JPEG/AVIF at .995. See [docs/harness_v3.md](docs/harness_v3.md) and clean
+`harness_v3_tuned_quick_manifest.json` (SHA `012f74a`, metric
 `brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans remain
 required before product claims; cross-codec CPU timing is still diagnostic.
 

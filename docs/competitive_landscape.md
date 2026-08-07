@@ -54,15 +54,16 @@ quantization, lapped transforms, grain, context counts), not a shortcut.
 Clean exhaustive quick profile, all 4/4 coverage (2,923 candidates, SHA
 `0561782`, local box-window MS-SSIM-form metric):
 
-| Gate | AVIF | WebP | strong JPEG | native JPEG 2000 | CAPS |
+| Gate | AVIF | WebP | strong JPEG | native JPEG 2000 | CAPS tuned |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
 
-Historical "beats WebP/JPEG" claims are invalidated. CAPS is close to
-JPEG/JPEG2000 at .970 but trails WebP/AVIF; its .995 full-coverage rate is the
-largest. See `docs/harness_v3.md` and `harness_v3_final_quick_manifest.json`.
+Historical proxy-based claims remain invalidated. Under audited v3, tuned
+CAPS beats WebP/JPEG2000 at .995 and JPEG2000 at .985, is close to JPEG/J2K at
+.970, and still trails AVIF at every gate. See `docs/harness_v3.md` and
+`harness_v3_tuned_quick_manifest.json`.
 Cross-codec timing remains diagnostic because API/process boundaries differ.
 
 ## The gap to AVIF/JPEG XL, decomposed

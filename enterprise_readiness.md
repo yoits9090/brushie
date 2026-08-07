@@ -14,16 +14,15 @@ format modes, all 4/4 coverage):
 
 | Gate | AVIF | WebP | optimized JPEG | JPEG 2000 | CAPS |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
 
-Brushie **does not currently beat any listed codec at the corrected gates**.
-At .970 it is close to strong JPEG/JPEG 2000 but 48% larger than WebP and 75%
-larger than AVIF. At .985 it is 19% larger than JPEG and 39% larger than
-WebP. At .995 its full-coverage rate is 2.4x AVIF/JPEG because one hard photo
-falls back to lossless. These numbers (manifest SHA `0561782`) are the current
-north star.
+Post-audit tuning fixed the high-quality rate cliff and cut CAPS by
+5.1%/.970, 2.8%/.985, and 50.3%/.995. CAPS now beats JPEG 2000 at .985/.995
+and WebP at .995. It is still 6-7% behind strong JPEG/JPEG2000 at .970,
+35-46% behind WebP/AVIF at .985, and 19-22% behind JPEG/AVIF at .995. These
+numbers (clean manifest SHA `012f74a`) are the current north star.
 
 ## What remains genuinely good
 
