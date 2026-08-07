@@ -26,14 +26,13 @@ fuzzing. Result: beats JPEG everywhere, beats WebP at .970/.985, ties .995,
 1.1-1.7x behind AVIF. Docs: format_spec.md, enterprise_readiness.md,
 competitive_landscape.md.
 
-### M3 (IN PROGRESS) — activity-aware quantization
-Adapt AUREA's zero-bit saliency idea: derive an edge/activity map from the
-decoded base LL (no bitstream cost), modulate per-coefficient quantization
-steps so edges stay crisp and smooth regions give bits back. Targets the
-.970/.985 photo gates (currently 1.7x/1.4x behind AVIF).
-
-Exit criteria: >=8% bytes at equal proxy quality on the corpus, with the
-modulation deterministic on both sides (integer math only).
+### M3 (RESULT: REJECTED on the MS-SSIM proxy) — activity-aware quantization
+AUREA-style zero-bit activity map was implemented and measured in both
+directions (edge-preserving and psychovisual masking); both lose at equal
+proxy quality (see docs/experiments_log.md). The proxy does not reward
+spatial step modulation. Re-test behind M8 with SSIMULACRA2/Butteraugli
+before closing it out. Same for RDOQ-lite: needs coder-integrated rate
+estimation to be meaningful.
 
 ### M4 — entropy-coder depth
 - Energy-bucket significance contexts (neighbor magnitude classes) and a

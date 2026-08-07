@@ -87,3 +87,43 @@ Reverted; the variant exists in /tmp only.
   quality settings.
 - The proxy is directional, not a perceptual claim. Re-gate on
   SSIMULACRA2/Butteraugli before shipping claims (roadmap M8).
+
+## Rejected (continued)
+
+### M3: activity-aware quantization (AUREA Turing-field idea, adapted)
+Zero-bit 3-class edge map derived from the dequantized luma base LL
+(gradient energy, integer thresholds); detail coefficients map to LL cells
+by integer ratio; per-coefficient effective steps. Both directions measured
+at equal proxy quality on Kodak 01 512px:
+
+| Direction | Mod (edge/smooth) | Result vs baseline |
+|---|---|---|
+| edge-preserving | step*0.5 / step*1.5 | q5: 20.0 KB @ 0.981 vs 11.9 KB @ 0.970 -> ~17 KB at 0.970 gate, WORSE |
+| psychovisual masking | step*1.5 / step*0.8 | ~12.6 KB at 0.970 vs 11.9 KB, WORSE; ~21 KB at 0.985 vs 19.4 KB, WORSE |
+| mild variants | 0.75/1.3, 1.3/0.85, 2.0/0.75 | all worse at equal quality |
+
+The MS-SSIM proxy does not reward spatial step modulation: it is dominated
+by overall per-pixel fidelity, so redistributing error spatially loses to
+the frequency-ordered baseline. The masking direction may still win on
+SSIMULACRA2/Butteraugli (perceptual) — parked behind M8 validation. The
+implementation exists in /tmp only (codec_activity.cpp / codec_mask.cpp).
+
+### RDOQ-lite (rate-distortion-optimized quantization)
+Midtread + drop-to-zero when lambda*bits > q^2*step^2, with a static rate
+model (2 + log2(|q|+1)). With a static model the decision is a uniform hard
+threshold per magnitude: lambda_k < ~1/3 keeps everything, >= 1/3 drops all
+q=1 coefficients (q5: 4.9 KB @ 0.93) -> equivalent to a dead-zone, which was
+already rejected. A useful RDOQ needs per-context rate estimates from the
+actual coder state (pre-pass with the adaptive probabilities), which is
+larger than a quick experiment. Parked as a roadmap item.
+
+## Where this leaves the campaign
+
+Every structural lever tried this session (9/7, splats, rate allocation,
+activity quantization, RDOQ-lite) failed to beat the empirically-calibrated
+v2 baseline on the MS-SSIM proxy. The remaining levers are all larger
+architectural items (bitplane refinement, per-context RDO, directional
+prediction) tracked in docs/roadmap.md M4-M7. The v2 codec's measured
+position (beats JPEG everywhere, beats WebP at .970/.985, ties .995,
+1.1-1.7x behind AVIF, ~10x cheaper encode than AVIF) is the honest current
+ceiling of this architecture within this campaign's budget.
