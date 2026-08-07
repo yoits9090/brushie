@@ -127,3 +127,12 @@ prediction) tracked in docs/roadmap.md M4-M7. The v2 codec's measured
 position (beats JPEG everywhere, beats WebP at .970/.985, ties .995,
 1.1-1.7x behind AVIF, ~10x cheaper encode than AVIF) is the honest current
 ceiling of this architecture within this campaign's budget.
+
+## Shipped (continued)
+
+### Per-position Rice remainder contexts + wider unary model
+Remainder bits now use one adaptive context per bit position (kCtxRem 1->13)
+and the unary context set grew 14->24. Measured neutral at the .970/.985/
+.995 gates (within +-0.1%) and -3.9% at q=90 (visually-lossless tier):
+58,875 -> 56,597 bytes on Kodak 01 512px at equal MS-SSIM (0.997). Kept for
+the high-quality/camera tier where Brushie is closest to AVIF.

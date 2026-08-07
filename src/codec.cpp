@@ -552,8 +552,8 @@ class RangeDecoder {
 
 constexpr unsigned kCtxSig = 8;
 constexpr unsigned kCtxSign = 4;
-constexpr unsigned kCtxUnary = 14;
-constexpr unsigned kCtxRem = 1;
+constexpr unsigned kCtxUnary = 24;
+constexpr unsigned kCtxRem = 13;  // one context per Rice remainder bit position
 constexpr unsigned kNumCtx = kCtxSig + kCtxSign + kCtxUnary + kCtxRem;
 
 struct BandProbs {
@@ -700,7 +700,7 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
           enc.encode_bit(probs.p[kCtxSig + kCtxSign + std::min<std::uint32_t>(i, kCtxUnary - 1)], 0);
         enc.encode_bit(probs.p[kCtxSig + kCtxSign + std::min<std::uint32_t>(qq, kCtxUnary - 1)], 1);
         for (int i = 0; i < k; ++i)
-          enc.encode_bit(probs.p[kCtxSig + kCtxSign + kCtxUnary], (rr >> i) & 1u);
+          enc.encode_bit(probs.p[kCtxSig + kCtxSign + kCtxUnary + i], (rr >> i) & 1u);
         mag_sum += m;
         ++mag_count;
         if (mag_count == 64) {
@@ -757,7 +757,7 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         }
         std::uint32_t m = qq << k;
         for (unsigned i = 0; i < static_cast<unsigned>(k); ++i)
-          m |= dec.decode_bit(probs.p[kCtxSig + kCtxSign + kCtxUnary]) << i;
+          m |= dec.decode_bit(probs.p[kCtxSig + kCtxSign + kCtxUnary + i]) << i;
         q = static_cast<std::int32_t>(m) + 1;
         if (sign) q = -q;
         mag_sum += m;
