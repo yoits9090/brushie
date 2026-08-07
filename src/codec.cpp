@@ -275,16 +275,18 @@ static std::uint8_t quality_for_target_bytes(std::uint32_t w, std::uint32_t h,
   if (target == 0) return fallback;
   const double ratio = static_cast<double>(target) /
                        static_cast<double>(std::uint64_t{3} * w * h);
-  // Coarse monotone operating points calibrated from the frozen Kodak/DIV2K
+  // Coarse monotone operating points calibrated from the v2 Kodak/DIV2K
   // sweep. This intentionally avoids trial encodes and therefore reports the
   // actual byte count instead of claiming exact rate control.
-  if (ratio >= 0.80) return 100;
-  if (ratio >= 0.60) return 90;
-  if (ratio >= 0.28) return 82;
-  if (ratio >= 0.21) return 70;
-  if (ratio >= 0.15) return 50;
-  if (ratio >= 0.10) return 35;
-  return 20;
+  if (ratio >= 0.40) return 100;
+  if (ratio >= 0.12) return 90;
+  if (ratio >= 0.085) return 82;
+  if (ratio >= 0.070) return 75;
+  if (ratio >= 0.055) return 60;
+  if (ratio >= 0.042) return 45;
+  if (ratio >= 0.032) return 20;
+  if (ratio >= 0.026) return 10;
+  return 5;
 }
 
 static std::uint8_t quality_for_target_lpips(double target) {
