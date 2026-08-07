@@ -139,20 +139,27 @@ def caps_prefix_bytes(path: Path) -> dict[int, int]:
     data = path.read_bytes()
     if len(data) < 64 or data[:4] != b"CAPS":
         raise ValueError(f"{path} is not a CAPS stream")
+    version = struct.unpack_from("<H", data, 4)[0]
+    entry_bytes = 20 if version >= 3 else 40
     levels = struct.unpack_from("<H", data, 16)[0]
     chunk_count = struct.unpack_from("<I", data, 32)[0]
     directory_bytes = struct.unpack_from("<I", data, 36)[0]
     data_offset = struct.unpack_from("<Q", data, 40)[0]
-    if directory_bytes != chunk_count * 40 or data_offset != 64 + directory_bytes:
+    if directory_bytes != chunk_count * entry_bytes or data_offset != 64 + directory_bytes:
         raise ValueError(f"{path} has invalid directory accounting")
     payload_by_layer = [0] * (levels + 1)
     expected_payload_offset = data_offset
     previous_layer = 0
     for index in range(chunk_count):
-        entry = 64 + index * 40
-        layer = struct.unpack_from("<H", data, entry)[0]
-        payload_offset = struct.unpack_from("<Q", data, entry + 20)[0]
-        payload_bytes = struct.unpack_from("<I", data, entry + 28)[0]
+        entry = 64 + index * entry_bytes
+        if version >= 3:
+            layer = data[entry]
+            payload_offset = expected_payload_offset
+            payload_bytes = struct.unpack_from("<I", data, entry + 12)[0]
+        else:
+            layer = struct.unpack_from("<H", data, entry)[0]
+            payload_offset = struct.unpack_from("<Q", data, entry + 20)[0]
+            payload_bytes = struct.unpack_from("<I", data, entry + 28)[0]
         if layer > levels or layer < previous_layer:
             raise ValueError(f"{path} has non-prefix progressive layer order")
         if payload_offset != expected_payload_offset:
@@ -170,7 +177,6 @@ def caps_prefix_bytes(path: Path) -> dict[int, int]:
         cumulative += payload_bytes
         result[layer] = cumulative
     return result
-
 
 def decoded_array(path: Path) -> np.ndarray:
     with Image.open(path) as image:

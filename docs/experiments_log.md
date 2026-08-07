@@ -175,3 +175,16 @@ at q95+ relax to diagonal 1.2x and chroma 2.0x. Compared with 1.5x/2.0x,
 expected full-coverage means improve ~1% (.970), ~1.4% (.985), and ~4%
 (.995). Alpha was also fixed to follow luma rather than accidentally receiving
 chroma's multiplier.
+
+### Compact v3 directory (SHIPPED)
+Whole-band v2 still spent 40 bytes/chunk on x/y=0, explicit cumulative
+offsets, derivable counts, and a 16-bit fixed mode. v3 uses 20 bytes/chunk:
+layer/band/channel/mode, width/height/step, payload bytes, checksum. Offsets
+and counts are derived; payloads stay contiguous; checksums remain. Decoder
+supports v1/v2 and has a retained v2 fixture with its historical entropy
+context layout.
+
+At the previous tuned matched points, exact v3 means (same reconstruction)
+are 10,325 / 18,342 / 38,174 bytes at .970/.985/.995, another 4.1%/2.5%/1.4%
+reduction. UI/meme individual files fall 12-16% because directory overhead
+was 31-34% in v2.

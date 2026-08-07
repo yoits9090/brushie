@@ -1,4 +1,4 @@
-# CAPS stream format v2
+# CAPS stream format v3
 
 All integers are little-endian. A stream is self-contained and may be
 validated without allocating a decoded image. Implementations must reject
@@ -8,16 +8,19 @@ overflow, unknown version, and checksum failures.
 ## Version history
 
 * v1 (legacy): per-tile varint/bit-packed coefficient coding (entropy modes
-  0..2). Still decodable by v2 decoders.
-* v2 (current): whole-band context-adaptive arithmetic coding (mode 3),
-  optional chroma 4:2:0, frequency-ordered quantization.
+  0..2). Still decoded by the current implementation.
+* v2 (legacy): whole-band context-adaptive arithmetic coding (mode 3),
+  optional chroma 4:2:0, 40-byte directory, 14 unary + shared remainder
+  contexts. Retained fixture coverage verifies decode compatibility.
+* v3 (current): compact 20-byte whole-band directory, cumulative/derived
+  offsets and counts, 24 unary + per-remainder-bit contexts, RGB/RGBA.
 
 ## Header (64 bytes)
 
 | Offset | Size | Field |
 |---:|---:|---|
 | 0 | 4 | ASCII `CAPS` magic |
-| 4 | 2 | version = 2 |
+| 4 | 2 | version = 3 |
 | 6 | 2 | flags: bit 0 = chroma 4:2:0 subsampled; bits 1..15 reserved |
 | 8 | 4 | source width |
 | 12 | 4 | source height |
@@ -36,30 +39,31 @@ overflow, unknown version, and checksum failures.
 | 56 | 4 | FNV-1a checksum of header bytes 0..55 |
 | 60 | 4 | reserved |
 
-## Directory (40 bytes per chunk)
+## Directory (20 bytes per chunk, v3)
 
-In v2 a chunk is one whole band of one channel at one progressive layer;
-there are no tile sub-chunks. Chunks are ordered coarse-to-fine: layer 0 is
-the base LL image, layer 1 the coarsest detail level, and the largest layer
-the finest detail level.
+A chunk is one whole band of one channel at one progressive layer. Chunks and
+payloads are ordered coarse-to-fine and contiguous. Because whole bands start
+at (0,0), offsets are cumulative, and count is width*height, v3 omits those
+redundant fields while retaining a per-payload checksum.
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 2 | progressive layer (0 = base LL) |
-| 2 | 1 | band: 0=LL base, 1=horizontal, 2=vertical, 3=diagonal |
-| 3 | 1 | channel: 0=Y, 1=Co, 2=Cg |
-| 4 | 4 | coefficient x (always 0 in v2) |
-| 8 | 4 | coefficient y (always 0 in v2) |
-| 12 | 2 | band width |
-| 14 | 2 | band height |
-| 16 | 2 | scalar quantization step |
-| 18 | 2 | entropy mode (v2 always 3) |
-| 20 | 8 | payload offset |
-| 28 | 4 | payload bytes |
-| 32 | 4 | coefficient count (width * height) |
-| 36 | 4 | FNV-1a checksum of payload |
+| 0 | 1 | progressive layer (0 = base LL, max 16) |
+| 1 | 1 | band: 0=LL base, 1=horizontal, 2=vertical, 3=diagonal |
+| 2 | 1 | channel: 0=Y, 1=Co, 2=Cg, 3=alpha |
+| 3 | 1 | entropy mode (3) |
+| 4 | 2 | band width |
+| 6 | 2 | band height |
+| 8 | 2 | scalar quantization step |
+| 10 | 2 | reserved |
+| 12 | 4 | payload bytes |
+| 16 | 4 | FNV-1a checksum of payload |
 
-## Payload coding: mode 3 (v2)
+Payload offset starts at header `payload_start` and advances by each entry's
+payload byte count. The coefficient count is band width*height. v1/v2 retain
+their 40-byte directory and explicit offsets/counts.
+
+## Payload coding: mode 3 (v3)
 
 One payload per (layer, band, channel) band. Layout:
 
@@ -74,8 +78,8 @@ Symbols per coefficient, in raster scan order:
    above, and above-left neighbours contribute 1, 2, and 4.
 2. If significant: a **sign** bit with 4 sign contexts (left/above signs),
    then the magnitude minus one `m` coded as Golomb-Rice with parameter `k`:
-   a unary quotient (per-position contexts, capped at 14) followed by `k`
-   remainder bits (one adaptive context, LSB first).
+   a unary quotient (per-position contexts, capped at 24) followed by `k`
+   remainder bits (one adaptive context per bit position, LSB first).
 3. `k` is re-adapted every 64 magnitudes to `floor(log2(mean m + 1))`,
    clamped to 0..12, identically on both sides.
 
@@ -105,8 +109,10 @@ chroma stack for channels 1/2.
 
 ## Progressive and resolution decoding
 
-A decoder may stop after any layer (chunks with a larger layer are ignored),
-giving a lower-resolution approximation. It may request any output size; the
+A decoder may stop after any layer. A physical prefix includes the complete
+64-byte header + compact directory and contiguous payload bytes through that
+layer; later logical offsets may exceed the received buffer and are skipped
+after directory-layout validation. It may request any output size; the
 reconstructed pyramid prefix is bilinearly resampled.
 
 ## Reconstruction

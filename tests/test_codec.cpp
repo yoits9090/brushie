@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -109,6 +110,8 @@ int main() {
         for (int i = 0; i < 8; ++i) v |= static_cast<std::uint64_t>(p[i]) << (i * 8);
         return v;
       };
+      const std::uint16_t version = u16(encoded.bytes.data() + 4);
+      const std::size_t entry_bytes = version >= 3 ? 20 : 40;
       const std::uint32_t chunks = u32(encoded.bytes.data() + 32);
       const std::size_t payload_start = static_cast<std::size_t>(u64(encoded.bytes.data() + 40));
       for (int layer = 0; layer <= static_cast<int>(encoded.stats.pyramid_levels); ++layer) {
@@ -117,11 +120,15 @@ int main() {
                                full_output, layer, &error));
         assert(full_output.size() == src.size());
         std::size_t prefix_size = payload_start;
+        std::size_t cumulative = payload_start;
         for (std::uint32_t ci = 0; ci < chunks; ++ci) {
-          const std::uint8_t* d = encoded.bytes.data() + 64 + static_cast<std::size_t>(ci) * 40;
-          if (u16(d) > layer) continue;
-          const std::size_t end = static_cast<std::size_t>(u64(d + 20)) + u32(d + 28);
-          if (end > prefix_size) prefix_size = end;
+          const std::uint8_t* d = encoded.bytes.data() + 64 + static_cast<std::size_t>(ci) * entry_bytes;
+          const std::uint16_t chunk_layer = version >= 3 ? d[0] : u16(d);
+          const std::size_t payload_size = version >= 3 ? u32(d + 12) : u32(d + 28);
+          const std::size_t payload_offset = version >= 3 ? cumulative : static_cast<std::size_t>(u64(d + 20));
+          cumulative = payload_offset + payload_size;
+          if (chunk_layer > layer) continue;
+          if (cumulative > prefix_size) prefix_size = cumulative;
         }
         std::vector<std::uint8_t> physical_prefix(
             encoded.bytes.begin(), encoded.bytes.begin() + prefix_size);
@@ -253,6 +260,19 @@ int main() {
     assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h, dst, -1, &error));
     assert(dst.size() == src.size());
     assert(encoded.bytes[21] == 4);
+  }
+  {
+    // Backward compatibility: retained v2 fixture uses 40-byte directory
+    // entries and must remain decodable after the compact v3 directory ships.
+    std::ifstream f("tests/fixtures/kodak01_512_q82_v2.brbr", std::ios::binary);
+    assert(f);
+    std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
+    assert(bytes.size() > 64);
+    assert(bytes[4] == 2 && bytes[5] == 0);
+    std::vector<std::uint8_t> decoded;
+    std::string error;
+    assert(brushie::decode(bytes.data(), bytes.size(), 512, 341, decoded, -1, &error));
+    assert(decoded.size() == 512u * 341u * 3u);
   }
   std::cout << "codec tests passed\n";
 }

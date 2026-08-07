@@ -1,6 +1,6 @@
 # Brushie roadmap: from "beats JPEG/WebP" to "beats every format"
 
-Status after harness-v3 correction: **v2 wavelet codec** — ties strong JPEG
+Status after harness-v3 correction and tuning: **v3 compact wavelet codec** — ties strong JPEG
 only at the .970 gate, trails WebP/AVIF, and has a severe full-coverage .995
 rate gap. Historical "beats WebP/JPEG" and 10-15x timing claims are invalid.
 See `docs/harness_v3.md`. This file tracks the campaign to beat AVIF and JPEG XL.

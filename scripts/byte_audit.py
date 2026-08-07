@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit every byte in CAPS v1 streams and estimate symbol entropy."""
+"""Audit every byte in legacy and compact Brushie streams."""
 from __future__ import annotations
 import csv
 import math
@@ -25,23 +25,34 @@ def unzig(v: int) -> int:
 def audit(path: Path) -> list[dict]:
     data = path.read_bytes()
     if data[:4] != b"CAPS": raise ValueError(path)
+    version = struct.unpack_from("<H", data, 4)[0]
+    entry_bytes = 20 if version >= 3 else 40
     levels = struct.unpack_from("<H", data, 16)[0]
     tile = struct.unpack_from("<H", data, 18)[0]
     chunks = struct.unpack_from("<I", data, 32)[0]
     directory = struct.unpack_from("<I", data, 36)[0]
     payload_start = struct.unpack_from("<Q", data, 40)[0]
+    if directory != chunks * entry_bytes or payload_start != 64 + directory:
+        raise ValueError(f"invalid directory accounting in {path}")
     by_group = defaultdict(lambda: {"chunks": 0, "directory_bytes": 0, "payload_bytes": 0,
                                     "coefficients": 0, "nonzero": 0, "symbols": Counter(),
                                     "zero_runs": Counter(), "modes": Counter()})
+    cumulative = payload_start
     for i in range(chunks):
-        off = 64 + i * 40
-        layer, band, channel = struct.unpack_from("<HBB", data, off)
-        x, y = struct.unpack_from("<II", data, off + 4)
-        tw, th, step, mode = struct.unpack_from("<HHHH", data, off + 12)
-        poff, psize, count = struct.unpack_from("<QII", data, off + 20)
+        off = 64 + i * entry_bytes
+        if version >= 3:
+            layer, band, channel, mode = struct.unpack_from("<BBBB", data, off)
+            tw, th, step = struct.unpack_from("<HHH", data, off + 4)
+            psize = struct.unpack_from("<I", data, off + 12)[0]
+            poff, count = cumulative, tw * th
+            cumulative += psize
+        else:
+            layer, band, channel = struct.unpack_from("<HBB", data, off)
+            tw, th, step, mode = struct.unpack_from("<HHHH", data, off + 12)
+            poff, psize, count = struct.unpack_from("<QII", data, off + 20)
         key = (layer, band, channel)
         g = by_group[key]
-        g["chunks"] += 1; g["directory_bytes"] += 40; g["payload_bytes"] += psize; g["coefficients"] += count
+        g["chunks"] += 1; g["directory_bytes"] += entry_bytes; g["payload_bytes"] += psize; g["coefficients"] += count
         g["modes"][mode] += 1
         pos = poff; end = poff + psize; decoded = 0
         if mode == 3:

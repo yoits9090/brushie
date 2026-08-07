@@ -3,7 +3,9 @@
 Brushie CAPS (Compact Adaptive Pyramid Streams) is a deterministic CPU-only
 image codec. It uses a reversible YCoCg-R transform, a 5/3 lifting pyramid,
 midtread scalar quantization with frequency-ordered steps, and whole-band
-context-adaptive binary arithmetic coding. Bands are ordered coarse-to-fine
+context-adaptive binary arithmetic coding. The current v3 stream uses a
+compact 20-byte whole-band directory while decoding legacy v1/v2 files.
+Bands are ordered coarse-to-fine
 for progressive decoding, and chroma is 4:2:0 subsampled at lossy operating
 points.
 
@@ -17,7 +19,7 @@ The old global-moment scoreboard is retired. Harness v3 uses local-window
 multiscale SSIM, exhaustive legal quality sweeps, strong format modes,
 verified still-image AVIF, adaptive JPEG 2000 search, full-coverage-only
 aggregates, clean manifests, and actual truncated progressive streams.
-Clean exhaustive quick result (2 Kodak photos + chat + meme, 2,923 encodes,
+Clean exhaustive quick result (2 Kodak photos + chat + meme, 3,323 encodes,
 all codecs 4/4 coverage):
 
 | Windowed MS-SSIM gate | AVIF | WebP | JPEG | JPEG 2000 | CAPS |

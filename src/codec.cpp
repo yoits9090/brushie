@@ -11,10 +11,12 @@
 namespace brushie {
 namespace {
 
-constexpr std::uint16_t kVersion = 2;
+constexpr std::uint16_t kVersion = 3;
+constexpr std::uint16_t kVersionBandV2 = 2;
 constexpr std::uint16_t kVersionLegacy = 1;
 constexpr std::size_t kHeaderBytes = 64;
-constexpr std::size_t kDirectoryBytes = 40;
+constexpr std::size_t kDirectoryBytesLegacy = 40;
+constexpr std::size_t kDirectoryBytes = 20;  // v3 compact whole-band entry
 constexpr std::uint32_t kMaxDimension = 16384;
 constexpr std::uint32_t kMaxChunks = 4'000'000;
 constexpr std::uint32_t kMaxTile = 128;
@@ -730,7 +732,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
                               std::uint32_t count, std::uint16_t step,
                               bool use_prediction, std::int32_t* dest,
                               std::uint32_t stride, std::uint32_t tw,
-                              std::uint32_t th, std::string* error) {
+                              std::uint32_t th, std::string* error,
+                              bool v2_entropy_layout = false) {
   if (size < 1) {
     fail(error, "empty arithmetic band payload");
     return false;
@@ -755,8 +758,10 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         const std::uint32_t sign = dec.decode_bit(probs.p[kCtxSig + sign_ctx]);
         std::uint32_t qq = 0;
         for (;;) {
+          const unsigned unary_contexts = v2_entropy_layout ? 14u : kCtxUnary;
           const std::uint32_t bit = dec.decode_bit(
-              probs.p[kCtxSig + kCtxSign + std::min<std::uint32_t>(qq, kCtxUnary - 1)]);
+              probs.p[kCtxSig + kCtxSign +
+                      std::min<std::uint32_t>(qq, unary_contexts - 1)]);
           if (bit) break;
           ++qq;
           if (qq > 65536u) {
@@ -765,8 +770,12 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
           }
         }
         std::uint32_t m = qq << k;
-        for (unsigned i = 0; i < static_cast<unsigned>(k); ++i)
-          m |= dec.decode_bit(probs.p[kCtxSig + kCtxSign + kCtxUnary + i]) << i;
+        for (unsigned i = 0; i < static_cast<unsigned>(k); ++i) {
+          const unsigned rem_context = v2_entropy_layout
+              ? kCtxSig + kCtxSign + 14u
+              : kCtxSig + kCtxSign + kCtxUnary + i;
+          m |= dec.decode_bit(probs.p[rem_context]) << i;
+        }
         q = static_cast<std::int32_t>(m) + 1;
         if (sign) q = -q;
         mag_sum += m;
@@ -964,24 +973,21 @@ static std::uint64_t get_u64(const std::uint8_t* p) {
 }
 
 static void append_directory(std::vector<std::uint8_t>& out, const Chunk& c,
-                             std::uint64_t offset) {
+                             std::uint64_t) {
+  // v3 compact entry. Whole-band x/y are zero, payload offsets are cumulative
+  // in directory order, and coefficient count is w*h; checksum is retained.
   const std::size_t off = out.size();
   out.resize(off + kDirectoryBytes, 0);
-  put_u16(out, off + 0, c.layer);
-  out[off + 2] = c.band;
-  out[off + 3] = c.channel;
-  put_u32(out, off + 4, c.x);
-  put_u32(out, off + 8, c.y);
-  put_u16(out, off + 12, c.w);
-  put_u16(out, off + 14, c.h);
-  put_u16(out, off + 16, c.step);
-  put_u16(out, off + 18, c.mode);
-  put_u64(out, off + 20, offset);
-  put_u32(out, off + 28, static_cast<std::uint32_t>(c.payload.size()));
-  put_u32(out, off + 32, c.count);
-  put_u32(out, off + 36, c.checksum);
+  out[off + 0] = static_cast<std::uint8_t>(c.layer);
+  out[off + 1] = c.band;
+  out[off + 2] = c.channel;
+  out[off + 3] = static_cast<std::uint8_t>(c.mode);
+  put_u16(out, off + 4, c.w);
+  put_u16(out, off + 6, c.h);
+  put_u16(out, off + 8, c.step);
+  put_u32(out, off + 12, static_cast<std::uint32_t>(c.payload.size()));
+  put_u32(out, off + 16, c.checksum);
 }
-
 
 #ifdef BRUSHIE_TEST_HOOKS
 // Test-only entry points for the band entropy coder.
@@ -1222,7 +1228,7 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
   const std::uint64_t data_offset = get_u64(data + 40);
   if (src_w == 0 || src_h == 0 || src_w > kMaxDimension || src_h > kMaxDimension ||
       tile == 0 || tile > kMaxTile || chunk_count > kMaxChunks ||
-      dir_bytes != static_cast<std::uint64_t>(chunk_count) * kDirectoryBytes ||
+      dir_bytes != static_cast<std::uint64_t>(chunk_count) * kDirectoryBytesLegacy ||
       data_offset != kHeaderBytes + dir_bytes || data_offset > size) {
     fail(error, "invalid CAPS directory bounds");
     return false;
@@ -1248,7 +1254,7 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
   std::uint64_t expected_payload_offset = data_offset;
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
-    const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * kDirectoryBytes;
+    const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * kDirectoryBytesLegacy;
     const std::uint16_t layer = get_u16(d + 0);
     const std::uint8_t band = d[2], channel = d[3];
     const std::uint32_t x = get_u32(d + 4), y = get_u32(d + 8);
@@ -1337,6 +1343,9 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
                       std::uint32_t output_width, std::uint32_t output_height,
                       std::vector<std::uint8_t>& rgb, int max_progressive_layer,
                       std::string* error) {
+  const std::uint16_t version = get_u16(data + 4);
+  const std::size_t directory_entry_bytes =
+      version == kVersion ? kDirectoryBytes : kDirectoryBytesLegacy;
   const std::uint16_t flags = get_u16(data + 6);
   const bool subsampled = (flags & 1u) != 0;
   const std::uint32_t src_w = get_u32(data + 8), src_h = get_u32(data + 12);
@@ -1348,7 +1357,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   const unsigned channels = data[21] == 4 ? 4u : 3u;
   if (src_w == 0 || src_h == 0 || src_w > kMaxDimension || src_h > kMaxDimension ||
       levels > 16 || chunk_count > kMaxChunks ||
-      dir_bytes != static_cast<std::uint64_t>(chunk_count) * kDirectoryBytes ||
+      dir_bytes != static_cast<std::uint64_t>(chunk_count) * directory_entry_bytes ||
       data_offset != kHeaderBytes + dir_bytes || data_offset > size) {
     fail(error, "invalid CAPS directory bounds");
     return false;
@@ -1432,16 +1441,38 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
   std::uint64_t expected_payload_offset = data_offset;
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
-    const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * kDirectoryBytes;
-    const std::uint16_t layer = get_u16(d + 0);
-    const std::uint8_t band = d[2], channel = d[3];
-    const std::uint32_t x = get_u32(d + 4), y = get_u32(d + 8);
-    const std::uint32_t tw = get_u16(d + 12), th = get_u16(d + 14);
-    const std::uint16_t step = get_u16(d + 16);
-    const std::uint16_t mode = get_u16(d + 18);
-    const std::uint64_t offset = get_u64(d + 20);
-    const std::uint32_t payload_size = get_u32(d + 28), count = get_u32(d + 32);
-    const std::uint32_t checksum = get_u32(d + 36);
+    const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * directory_entry_bytes;
+    std::uint16_t layer = 0, mode = 0, step = 0;
+    std::uint8_t band = 0, channel = 0;
+    std::uint32_t x = 0, y = 0, tw = 0, th = 0, payload_size = 0,
+                  count = 0, checksum = 0;
+    std::uint64_t offset = expected_payload_offset;
+    if (version == kVersion) {
+      layer = d[0];
+      band = d[1];
+      channel = d[2];
+      mode = d[3];
+      tw = get_u16(d + 4);
+      th = get_u16(d + 6);
+      step = get_u16(d + 8);
+      payload_size = get_u32(d + 12);
+      checksum = get_u32(d + 16);
+      count = tw * th;
+    } else {
+      layer = get_u16(d + 0);
+      band = d[2];
+      channel = d[3];
+      x = get_u32(d + 4);
+      y = get_u32(d + 8);
+      tw = get_u16(d + 12);
+      th = get_u16(d + 14);
+      step = get_u16(d + 16);
+      mode = get_u16(d + 18);
+      offset = get_u64(d + 20);
+      payload_size = get_u32(d + 28);
+      count = get_u32(d + 32);
+      checksum = get_u32(d + 36);
+    }
     if (offset != expected_payload_offset ||
         offset > std::numeric_limits<std::uint64_t>::max() - payload_size) {
       fail(error, "invalid CAPS payload layout");
@@ -1500,7 +1531,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     if (!decode_band_arith(payload, payload_size, count, step, band == 0,
-                           destination, stride, tw, th, error))
+                           destination, stride, tw, th, error,
+                           version == kVersionBandV2))
       return false;
   }
 
@@ -1568,7 +1600,9 @@ bool decode(const std::uint8_t* data, std::size_t size,
     return false;
   }
   const std::uint16_t version = get_u16(data + 4);
-  if (version == kVersion) return decode_v2(data, size, output_width, output_height, rgb, max_progressive_layer, error);
+  if (version == kVersion || version == kVersionBandV2)
+    return decode_v2(data, size, output_width, output_height, rgb,
+                     max_progressive_layer, error);
   if (version == kVersionLegacy) return decode_v1(data, size, output_width, output_height, rgb, max_progressive_layer, error);
   fail(error, "unsupported CAPS stream version");
   return false;
