@@ -234,8 +234,9 @@ def run_caps(
     progressive_rows: list[dict[str, object]],
 ) -> None:
     height, width = original.shape[:2]
-    for quality in (20, 35, 50, 70, 82, 90):
-        for tile in (32, 64, 128):
+    # Tile size is irrelevant in the v2 whole-band format; sweep quality only.
+    for quality in (10, 15, 20, 30, 45, 60, 75, 82, 90):
+        for tile in (64,):
             encoded = temp / f"{stem}.caps-q{quality}-t{tile}.caps"
             output = temp / f"{stem}.caps-q{quality}-t{tile}.ppm"
             encode = subprocess.run(

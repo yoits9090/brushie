@@ -535,7 +535,7 @@ class RangeDecoder {
 // ---------------------------------------------------------------------------
 
 constexpr unsigned kCtxSig = 8;
-constexpr unsigned kCtxSign = 1;
+constexpr unsigned kCtxSign = 4;
 constexpr unsigned kCtxUnary = 14;
 constexpr unsigned kCtxRem = 1;
 constexpr unsigned kNumCtx = kCtxSig + kCtxSign + kCtxUnary + kCtxRem;
@@ -626,6 +626,16 @@ static unsigned sig_context(const std::int32_t* band, std::uint32_t stride,
   return ctx;
 }
 
+
+static unsigned sign_context(const std::int32_t* band, std::uint32_t stride,
+                             std::uint32_t x, std::uint32_t y) {
+  unsigned ctx = 0;
+  const std::int32_t left = x > 0 ? band[static_cast<std::size_t>(y) * stride + x - 1] : 0;
+  const std::int32_t above = y > 0 ? band[static_cast<std::size_t>(y - 1) * stride + x] : 0;
+  if (left < 0) ctx += 1;
+  if (above < 0) ctx += 2;
+  return ctx;
+}
 static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                               std::uint32_t h, bool use_prediction,
                               std::uint64_t nonzero,
@@ -657,7 +667,8 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
       enc.encode_bit(probs.p[kCtxSig + ctx], s);
       if (s) {
         const std::uint32_t sign = q < 0 ? 1u : 0u;
-        enc.encode_bit(probs.p[kCtxSig + kCtxSign], sign);
+        const unsigned sign_ctx = sign_context(band, w, x, y);
+        enc.encode_bit(probs.p[kCtxSig + sign_ctx], sign);
         const std::uint32_t m = static_cast<std::uint32_t>(q < 0 ? -q : q) - 1u;
         const std::uint32_t qq = m >> k;
         const std::uint32_t rr = m & ((1u << k) - 1u);
@@ -707,7 +718,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
       const std::uint32_t s = dec.decode_bit(probs.p[kCtxSig + ctx]);
       std::int32_t q = 0;
       if (s) {
-        const std::uint32_t sign = dec.decode_bit(probs.p[kCtxSig + kCtxSign]);
+        const unsigned sign_ctx = sign_context(dest, stride, x, y);
+        const std::uint32_t sign = dec.decode_bit(probs.p[kCtxSig + sign_ctx]);
         std::uint32_t qq = 0;
         for (;;) {
           const std::uint32_t bit = dec.decode_bit(
