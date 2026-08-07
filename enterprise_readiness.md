@@ -14,15 +14,15 @@ format modes, all 4/4 coverage):
 
 | Gate | AVIF | WebP | optimized JPEG | JPEG 2000 | CAPS |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,325 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-Post-audit tuning fixed the high-quality rate cliff and cut CAPS by
-5.1%/.970, 2.8%/.985, and 50.3%/.995. CAPS now beats JPEG 2000 at .985/.995
-and WebP at .995. It is still 6-7% behind strong JPEG/JPEG2000 at .970,
-35-46% behind WebP/AVIF at .985, and 19-22% behind JPEG/AVIF at .995. These
-numbers (clean manifest SHA `012f74a`) are the current north star.
+Post-audit tuning plus the compact v3 directory cut CAPS by 9.0%/.970,
+5.3%/.985, and 51.0%/.995. CAPS beats JPEG 2000 at .985/.995 and WebP at
+.995. It is within 1.8% of strong JPEG and 2.8% of J2K at .970; still 32-42%
+behind WebP/AVIF at .985 and 18-20% behind JPEG/AVIF at .995. These numbers
+(clean manifest SHA `f8e2035`) are the current north star.
 
 ## What remains genuinely good
 

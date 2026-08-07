@@ -114,3 +114,19 @@ vs the corrected baseline CAPS: -5.1%, -2.8%, -50.3%. At .995 CAPS now beats
 WebP 38% and JPEG 2000 13%, but remains 22% larger than AVIF and 19% larger
 than strong JPEG. At .970 it is within 6-7% of JPEG/JPEG2000 but still far
 behind WebP/AVIF. `harness_v3_tuned_quick_*` is the current reference output.
+
+## Compact `.brbr` v3 result (current)
+
+The v3 20-byte directory (offsets/counts derived, checksums retained) was
+cleanly rerun from SHA `f8e2035` with the same 3,323 candidates and 4/4
+coverage:
+
+| Gate | AVIF | WebP | strong JPEG | JPEG 2000 | CAPS v3 |
+|---:|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,325 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
+
+vs corrected baseline CAPS: -9.0%, -5.3%, -51.0%. The compact directory is
+especially material for UI/meme files (12-16% individual reduction). Current
+reference outputs: `harness_v3_brbr_v3_quick_*`.

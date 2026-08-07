@@ -56,14 +56,14 @@ Clean exhaustive quick profile, all 4/4 coverage (2,923 candidates, SHA
 
 | Gate | AVIF | WebP | strong JPEG | native JPEG 2000 | CAPS tuned |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,325 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-Historical proxy-based claims remain invalidated. Under audited v3, tuned
-CAPS beats WebP/JPEG2000 at .995 and JPEG2000 at .985, is close to JPEG/J2K at
-.970, and still trails AVIF at every gate. See `docs/harness_v3.md` and
-`harness_v3_tuned_quick_manifest.json`.
+Historical proxy-based claims remain invalidated. Under audited compact v3,
+CAPS beats WebP/JPEG2000 at .995 and JPEG2000 at .985, is within 1.8-2.8% of
+JPEG/J2K at .970, and still trails AVIF at every gate. See
+`docs/harness_v3.md` and `harness_v3_brbr_v3_quick_manifest.json`.
 Cross-codec timing remains diagnostic because API/process boundaries differ.
 
 ## The gap to AVIF/JPEG XL, decomposed

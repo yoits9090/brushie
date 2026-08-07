@@ -24,16 +24,16 @@ all codecs 4/4 coverage):
 
 | Windowed MS-SSIM gate | AVIF | WebP | JPEG | JPEG 2000 | CAPS |
 |---:|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,770 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,817 |
-| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,709 |
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 10,325 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-Post-audit tuning (quality-adaptive high-tier allocation + 32/64 base-mode
-competition + corrected diagonal/chroma weights) cuts CAPS 5.1%/.970,
-2.8%/.985, and 50.3%/.995. CAPS now beats JPEG 2000 at .985/.995 and WebP at
-.995, while remaining 6-7% behind JPEG/J2K at .970 and 19-22% behind
-JPEG/AVIF at .995. See [docs/harness_v3.md](docs/harness_v3.md) and clean
-`harness_v3_tuned_quick_manifest.json` (SHA `012f74a`, metric
+Post-audit tuning plus compact v3 cuts CAPS 9.0%/.970, 5.3%/.985, and
+51.0%/.995 versus the corrected baseline. CAPS beats JPEG 2000 at .985/.995
+and WebP at .995; it is within 1.8% of strong JPEG and 2.8% of J2K at .970,
+and remains 18-20% behind JPEG/AVIF at .995. See
+[docs/harness_v3.md](docs/harness_v3.md) and clean
+`harness_v3_brbr_v3_quick_manifest.json` (SHA `f8e2035`, metric
 `brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans remain
 required before product claims; cross-codec CPU timing is still diagnostic.
 
