@@ -1379,28 +1379,24 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   if (subsampled) {
     c_in_w = (src_w + 1) / 2;
     c_in_h = (src_h + 1) / 2;
-    const std::uint32_t target = safe_base_target(c_in_w, c_in_h);
+    // Chroma level count is self-described by its stored base dimensions.
+    // Do not re-run the encoder's historical target heuristic: v2 streams
+    // may select a 32- or 64-base mode independently per image.
     std::uint32_t w = c_in_w, h = c_in_h;
-    std::uint16_t cl = 0;
-    while (std::min(w, h) > target && w > 1 && h > 1) {
-      ++cl;
-      w = (w + 1) / 2;
-      h = (h + 1) / 2;
-    }
-    if (w != c_base_w || h != c_base_h) {
-      fail(error, "chroma base dimensions do not match pyramid");
-      return false;
-    }
-    // Chroma has its own (possibly shorter) level stack; chunks for channel
-    // 1/2 at layer k reference chroma level (cl - k).
-    w = c_in_w;
-    h = c_in_h;
-    for (std::uint16_t i = 0; i < cl; ++i) {
+    while (w != c_base_w || h != c_base_h) {
+      if (w <= 1 || h <= 1 || shapes1.size() >= 16) {
+        fail(error, "chroma base dimensions do not match pyramid");
+        return false;
+      }
       BandLevel lev;
       lev.w = w;
       lev.h = h;
       lev.lw = (w + 1) / 2;
       lev.lh = (h + 1) / 2;
+      if (lev.lw < c_base_w || lev.lh < c_base_h) {
+        fail(error, "chroma base dimensions do not match pyramid");
+        return false;
+      }
       shapes1.push_back(lev);
       shapes2.push_back(lev);
       w = lev.lw;

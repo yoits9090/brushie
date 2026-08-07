@@ -186,6 +186,15 @@ int main() {
                              decoded, -1, &error));
       assert(decoded == src);
     }
+    // Lossy deep mode also has a shorter, independently-derived 4:2:0
+    // chroma stack; the decoder must derive it from header base dimensions.
+    options.quality = 50;
+    options.base_target = 32;
+    assert(brushie::encode({src.data(), w, h, 0}, options, deep, &error));
+    std::vector<std::uint8_t> lossy;
+    assert(brushie::decode(deep.bytes.data(), deep.bytes.size(), w, h,
+                           lossy, -1, &error));
+    assert(lossy.size() == src.size());
   }
   {
     // q99 must remain a real lossy high-quality point, not collapse to the
