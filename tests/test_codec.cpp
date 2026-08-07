@@ -73,7 +73,7 @@ int main() {
   {
     // Lossy round-trip at multiple operating points, including the 4:2:0
     // chroma path (quality < 95) and odd dimensions.
-    for (const auto q : {20u, 35u, 50u, 70u, 82u, 90u, 100u}) {
+    for (const auto q : {20u, 35u, 50u, 70u, 82u, 90u, 99u, 100u}) {
       const unsigned w = 129, h = 131;
       std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
       for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
@@ -157,6 +157,30 @@ int main() {
     options.threads = 1;
     assert(brushie::encode({src.data(), w, h, 0}, options, b, &error));
     assert(a.bytes == b.bytes);
+  }
+  {
+    // q99 must remain a real lossy high-quality point, not collapse to the
+    // q100 lossless stream (regression for the harness-v3 .995 cliff fix).
+    const unsigned w = 257, h = 193;
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
+    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
+      const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 3;
+      src[i] = static_cast<std::uint8_t>((x * 37 + y * 11) & 255);
+      src[i + 1] = static_cast<std::uint8_t>((x * 5 + y * 41) & 255);
+      src[i + 2] = static_cast<std::uint8_t>(((x * 13) ^ (y * 29)) & 255);
+    }
+    brushie::EncodeOptions options;
+    options.quality = 99;
+    options.threads = 4;
+    brushie::EncodedImage q99, q100;
+    std::string error;
+    assert(brushie::encode({src.data(), w, h, 0}, options, q99, &error));
+    options.quality = 100;
+    assert(brushie::encode({src.data(), w, h, 0}, options, q100, &error));
+    assert(q99.bytes.size() < q100.bytes.size());
+    std::vector<std::uint8_t> decoded;
+    assert(brushie::decode(q99.bytes.data(), q99.bytes.size(), w, h, decoded, -1, &error));
+    assert(decoded.size() == src.size());
   }
   {
     // RGBA lossless round-trip (alpha channel, channel count 4).

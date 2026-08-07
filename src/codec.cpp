@@ -592,7 +592,13 @@ static std::uint16_t quant_step(std::uint8_t quality,
   // coefficient. Calibrated on the frozen Kodak sweep at equal MS-SSIM gates
   // (~25% byte reduction vs the previous 2^(coarseness/2) table).
   const std::uint32_t coarseness = num_levels - 1 - level_from_finest;
-  const double weight = std::pow(2.0, 1.25 * std::min<double>(coarseness, 3.0));
+  // The corrected local-window metric exposed a visually-lossless rate
+  // cliff: q99 still used very coarse low-frequency detail steps, then q100
+  // jumped to full lossless. Preserve the delivery-optimized exponent below
+  // q95, but use a gentler high-quality allocation at q95..99. This leaves
+  // .970/.985 operating points unchanged and avoids the lossless fallback.
+  const double exponent = quality < 95 ? 1.25 : 0.8;
+  const double weight = std::pow(2.0, exponent * std::min<double>(coarseness, 3.0));
   double step = root * weight;
   if (band == 3) step *= 1.5;
   if (channel != 0) step *= 2.0;

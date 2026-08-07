@@ -140,3 +140,18 @@ and the unary context set grew 14->24. Measured neutral at the .970/.985/
 .995 gates (within +-0.1%) and -3.9% at q=90 (visually-lossless tier):
 58,875 -> 56,597 bytes on Kodak 01 512px at equal MS-SSIM (0.997). Kept for
 the high-quality/camera tier where Brushie is closest to AVIF.
+
+### Harness-v3 high-quality allocation (SHIPPED)
+The corrected local metric exposed a q99→q100 rate cliff on the hard Kodak
+photo: q99 was 78,896 B at .99457, forcing a 241,350 B lossless stream to
+cross .995. A quality-adaptive level exponent keeps the delivery table
+(1.25) below q95 and switches to 0.8 at q95..99. Corrected quick-corpus
+results from the parameter sweep:
+
+- .970: unchanged (~11.35 KB mean)
+- .985: unchanged (~19.35 KB mean)
+- .995: 77.87 KB → 40.30 KB (-48.3%, full coverage)
+
+The hard photo now crosses .995 at q97 in 91,072 B rather than q100 in
+241,350 B. This should put CAPS below full-coverage WebP/JPEG2000 at .995;
+a clean exhaustive rerun is required before publishing the final aggregate.
