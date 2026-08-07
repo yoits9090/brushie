@@ -11,25 +11,27 @@ Design notes and the competitive audit are in [literature_review.md](literature_
 and [design_candidates.md](design_candidates.md); the format is specified in
 [format_spec.md](format_spec.md).
 
-## Competitive status (corrected harness v3)
+## Competitive status (audited harness v3)
 
-The old scoreboard used a global-moment "MS-SSIM" proxy and overstated
-Brushie's performance. Harness v3 uses local-window multiscale SSIM, stronger
-standard-codec settings, dense sweeps, comparable wall timing, and explicit
-coverage rules. Corrected quick profile (2 Kodak photos + chat + meme):
+The old global-moment scoreboard is retired. Harness v3 uses local-window
+multiscale SSIM, exhaustive legal quality sweeps, strong format modes,
+verified still-image AVIF, adaptive JPEG 2000 search, full-coverage-only
+aggregates, clean manifests, and actual truncated progressive streams.
+Clean exhaustive quick result (2 Kodak photos + chat + meme, 2,923 encodes,
+all codecs 4/4 coverage):
 
-| Gate | AVIF | WebP | CAPS | Strong JPEG |
-|---:|---:|---:|---:|---:|
-| .970 (4/4 coverage) | 7,352 | 8,983 | 11,516 | 11,565 |
-| .985 (4/4 coverage) | 13,883 | 15,268 | 24,444 | 20,040 |
-| .995 full coverage | partial | partial | 78,254 | 52,215 |
+| Windowed MS-SSIM gate | AVIF | WebP | JPEG | JPEG 2000 | CAPS |
+|---:|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
 
-CAPS currently ties optimized/progressive JPEG at .970, but trails WebP/AVIF;
-at .985 it trails all three. This corrected baseline is the optimization
-north star. See [docs/harness_v3.md](docs/harness_v3.md) for the defects,
-method, coverage caveats, and exact numbers. No customer-facing perceptual or
-CPU claims should be made before SSIMULACRA2/Butteraugli and blinded-human
-validation.
+CAPS currently trails every listed codec at .970/.985; at .995 it trails
+AVIF/JPEG by 2.4x and WebP by 19%. This is the optimization north star, not a
+customer claim. See [docs/harness_v3.md](docs/harness_v3.md) and the clean
+`harness_v3_final_quick_manifest.json` (git SHA `0561782`, metric
+`brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans remain
+required before product claims; cross-codec CPU timing is still diagnostic.
 
 ## Build
 

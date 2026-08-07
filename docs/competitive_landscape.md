@@ -49,26 +49,21 @@ codecs" does not hold up. Mature codecs (JPEG XL, AVIF, jpegli) are the real
 competition; the independent repos are a source of *techniques* (activity
 quantization, lapped transforms, grain, context counts), not a shortcut.
 
-## Where Brushie stands (corrected harness v3)
+## Where Brushie stands (audited harness v3)
 
-The historical global-moment proxy overstated Brushie's performance. Harness
-v3 uses local-window multiscale SSIM, exhaustive integer quality sweeps,
-strong WebP/JPEG modes, still-image AVIF, honest full-coverage aggregates, and
-actual truncated progressive streams. Corrected quick profile (2 Kodak photos
-+ chat + meme, all 4/4 coverage):
+Clean exhaustive quick profile, all 4/4 coverage (2,923 candidates, SHA
+`0561782`, local box-window MS-SSIM-form metric):
 
-| Windowed MS-SSIM gate | AVIF | WebP | strong JPEG | CAPS |
-|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,659 | 10,140 | 11,347 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,351 |
-| .995 | 31,810 | 65,498 | 32,427 | 77,869 |
+| Gate | AVIF | WebP | strong JPEG | native JPEG 2000 | CAPS |
+|---:|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
 
-Brushie is currently 48% larger than WebP and 75% larger than AVIF at .970;
-39%/49% larger at .985; and 2.4x larger than AVIF/strong JPEG at .995. That
-is the real optimization baseline. Historical claims that CAPS beat WebP and
-JPEG are invalidated. See `docs/harness_v3.md` for the failure analysis and
-exact methodology. Cross-codec CPU claims are withdrawn until timing scopes,
-repeats, and thread/resource budgets are normalized.
+Historical "beats WebP/JPEG" claims are invalidated. CAPS is close to
+JPEG/JPEG2000 at .970 but trails WebP/AVIF; its .995 full-coverage rate is the
+largest. See `docs/harness_v3.md` and `harness_v3_final_quick_manifest.json`.
+Cross-codec timing remains diagnostic because API/process boundaries differ.
 
 ## The gap to AVIF/JPEG XL, decomposed
 

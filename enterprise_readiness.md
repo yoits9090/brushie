@@ -8,19 +8,22 @@ searched CAPS much more densely than standards, underpowered WebP/JPEG/AVIF,
 compared survivor means at partial coverage, and mixed incompatible timing
 scopes. See [docs/harness_v3.md](docs/harness_v3.md).
 
-Corrected exhaustive quick profile (2 Kodak photos + chat + meme, local-window
-multiscale SSIM, every integer quality, strong format modes, 4/4 coverage):
+Corrected clean exhaustive quick profile (2 Kodak photos + chat + meme,
+2,923 encodes, local-window multiscale SSIM, every legal quality, strong
+format modes, all 4/4 coverage):
 
-| Windowed MS-SSIM gate | AVIF | WebP | optimized JPEG | CAPS |
-|---:|---:|---:|---:|---:|
-| .970 | 6,466 | 7,659 | 10,140 | 11,347 |
-| .985 | 12,948 | 13,901 | 16,328 | 19,351 |
-| .995 | 31,810 | 65,498 | 32,427 | 77,869 |
+| Gate | AVIF | WebP | optimized JPEG | JPEG 2000 | CAPS |
+|---:|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,658 | 10,140 | 10,046 | 11,346 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,084 | 19,351 |
+| .995 | 31,810 | 65,498 | 32,427 | 44,377 | 77,869 |
 
-Brushie therefore **does not currently beat WebP, AVIF, or strong JPEG** under
-the corrected gate. At .970 it is close to strong JPEG but 48% larger than
-WebP and 75% larger than AVIF. At .995 it needs lossless on one hard photo and
-is 2.4x larger than AVIF/JPEG. Those numbers are the current north star.
+Brushie **does not currently beat any listed codec at the corrected gates**.
+At .970 it is close to strong JPEG/JPEG 2000 but 48% larger than WebP and 75%
+larger than AVIF. At .985 it is 19% larger than JPEG and 39% larger than
+WebP. At .995 its full-coverage rate is 2.4x AVIF/JPEG because one hard photo
+falls back to lossless. These numbers (manifest SHA `0561782`) are the current
+north star.
 
 ## What remains genuinely good
 

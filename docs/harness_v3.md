@@ -52,38 +52,45 @@ Additional fairness bugs:
   `tests/test_enterprise_eval_helpers.py` proves the primary metric and
   coverage rules.
 
-## Corrected quick result (2 Kodak photos + chat + meme, 512px max)
+## Final clean exhaustive quick result
 
-| Gate | Codec | Coverage | Mean bytes | Mean windowed MS-SSIM |
+Command: `python3 scripts/enterprise_eval.py --quick --output-prefix harness_v3_final_quick`
+from clean git SHA `0561782`; 2,923 encoded candidates; metric
+`brushie-box11-ms-ssim-v1`; all codecs 4/4 coverage.
+
+| Gate | Codec | Mean bytes | Mean bpp | Mean windowed MS-SSIM |
 |---:|---|---:|---:|---:|
-| .970 | AVIF | 4/4 | 7,352 | .9728 |
-| .970 | WebP | 4/4 | 8,983 | .9753 |
-| .970 | CAPS | 4/4 | 11,516 | .9736 |
-| .970 | JPEG | 4/4 | 11,565 | .9744 |
-| .985 | AVIF | 4/4 | 13,883 | .9869 |
-| .985 | WebP | 4/4 | 15,268 | .9867 |
-| .985 | JPEG | 4/4 | 20,040 | .9863 |
-| .985 | CAPS | 4/4 | 24,444 | .9884 |
-| .995 | JPEG | 4/4 | 52,215 | .9959 |
-| .995 | CAPS | 4/4 | 78,254 | .9965 |
-| .995 | AVIF | 3/4 | 18,584 | .9958 |
-| .995 | WebP | 3/4 | 19,602 | .9955 |
+| .970 | AVIF | 6,466 | .296 | .9711 |
+| .970 | WebP | 7,658 | .351 | .9716 |
+| .970 | JPEG 2000 | 10,046 | .460 | .9706 |
+| .970 | optimized JPEG | 10,140 | .465 | .9714 |
+| .970 | CAPS | 11,346 | .520 | .9734 |
+| .985 | AVIF | 12,948 | .593 | .9856 |
+| .985 | WebP | 13,901 | .637 | .9857 |
+| .985 | optimized JPEG | 16,328 | .748 | .9853 |
+| .985 | JPEG 2000 | 19,084 | .874 | .9853 |
+| .985 | CAPS | 19,351 | .887 | .9865 |
+| .995 | AVIF | 31,810 | 1.458 | .9953 |
+| .995 | optimized JPEG | 32,427 | 1.486 | .9952 |
+| .995 | JPEG 2000 | 44,377 | 2.033 | .9954 |
+| .995 | WebP | 65,498 | 3.001 | .9964 |
+| .995 | CAPS | 77,869 | 3.568 | .9964 |
 
-This is less flattering but real: CAPS ties strong JPEG at .970, trails WebP
-by 28% and AVIF by 57%; at .985 it trails strong JPEG by 22%, WebP by 60%,
-and AVIF by 76%. At .995 CAPS has full coverage but needs lossless on one
-photo; partial AVIF/WebP rows are not directly comparable.
+The old claims are reversed: CAPS trails WebP/AVIF and strong JPEG. The hard
+photo (`kodak_02`) drives the .995 deficit: CAPS falls back to its 241,350-byte
+lossless stream vs AVIF 78,927 and JPEG 64,394. Progressive streaming is useful
+for UI/meme content, but both photos require the complete stream to reach the
+.950/.970 windowed gates; see `_previews.csv`.
 
 ## Remaining harness work
 
-1. Replace/augment the box-window proxy with SSIMULACRA2 or Butteraugli when a
-   trusted binary is available; keep blinded human tests as the sales gate.
-2. Add a true high-resolution corpus. The available Kodak sources are
-   768x512; available DIV2K LR validation files are ~1020px. Rename the old
-   `expanded` profile to `native_expanded` until real 1536px+ sources land.
-3. Optionally add jpegli, mozjpeg, and `cjxl` when installed. Do not call
-   libjpeg-turbo "the best JPEG" or omit JPEG XL from final claims.
-4. Use repeated warm timing runs or native APIs for cross-codec CPU claims.
+1. Add SSIMULACRA2 or Butteraugli when a trusted binary is available; keep
+   blinded human tests as the sales gate.
+2. Add a true >=1536px corpus. Current `native_expanded` sources top out at
+   1200px (synthetic), 1020px (DIV2K LR), and 768px (Kodak).
+3. Add jpegli, mozjpeg, and `cjxl` when installed; JPEG XL is the true target.
+4. Use identical native APIs/boundaries, warmups/repeats, medians, CPU time,
+   and fixed resources before any cross-codec cost claim.
 
 Old `enterprise_eval_*` CSVs remain historical artifacts and must not be used
 for competitive claims. New reports must state `harness=v3-windowed`.
