@@ -235,7 +235,7 @@ def run_caps(
 ) -> None:
     height, width = original.shape[:2]
     # Tile size is irrelevant in the v2 whole-band format; sweep quality only.
-    for quality in (5, 10, 15, 20, 30, 45, 60, 75, 82, 90):
+    for quality in (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 82, 85, 90):
         for tile in (64,):
             encoded = temp / f"{stem}.caps-q{quality}-t{tile}.caps"
             output = temp / f"{stem}.caps-q{quality}-t{tile}.ppm"

@@ -578,7 +578,7 @@ static std::uint16_t quant_step(std::uint8_t quality,
   const std::uint32_t coarseness = num_levels - 1 - level_from_finest;
   const double weight = std::pow(2.0, 1.25 * std::min<double>(coarseness, 3.0));
   double step = root * weight;
-  if (band == 3) step *= 1.2;
+  if (band == 3) step *= 1.5;
   if (channel != 0) step *= 2.0;
   return static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
