@@ -19,26 +19,31 @@ photographs, two deterministic chat/UI images, a 512-pixel preview profile,
 and a 1536-pixel expanded-image profile. It selects the smallest candidate
 meeting each MS-SSIM-proxy gate.
 
-Quick profile (512px chat preview, 4 samples; mean bytes):
+Full profile (8 samples: 6 photographs + chat + meme; mean bytes):
 
-| Gate | CAPS v2 | WebP | AVIF | JPEG |
-|---|---:|---:|---:|---:|
-| .970 | 7,039 | 8,739 | 4,095 | 12,396 |
-| .985 | 12,000 | 10,099 | 8,568 | 14,971 |
-| .995 | 23,327 | 19,704 | 18,560 | 36,428 |
+| Profile | Gate | CAPS v2 | WebP | AVIF | JPEG |
+|---|---|---:|---:|---:|---:|
+| chat 512px | .970 | 8,848 | 11,906 | 5,290 | 15,485 |
+| chat 512px | .985 | 12,203 | 12,586 | 9,067 | 16,772 |
+| chat 512px | .995 | 23,508 | 19,668 | 18,564 | 32,803 |
+| expanded 1536px | .970 | 17,286 | 25,108 | 11,454 | 35,501 |
+| expanded 1536px | .985 | 21,969 | 25,808 | 18,340 | 36,463 |
+| expanded 1536px | .995 | 39,231 | 38,719 | 35,212 | 56,314 |
 
-The v1 baseline at the same profile was 53,642 / 62,138 / 106,385 bytes, so
-the v2 codec is 4-7x smaller at equal proxy quality. CAPS now beats JPEG at
-every gate, beats WebP at the .970 gate, and trails WebP by ~1.2x and AVIF by
-~1.3-1.7x at the higher gates. On individual samples CAPS already beats AVIF
-(e.g. photo_01 at .995: 45,121 vs 47,581 bytes).
+The v1 baseline at the same profile was 53,642 / 62,138 / 106,385 bytes
+(chat) and 109,348 / 124,861 / 172,973 (expanded), so the v2 codec is 4.4-6.3x
+smaller at equal proxy quality. CAPS now beats JPEG at every gate and beats
+WebP at the .970 and .985 gates on both profiles; at .995 it is essentially
+tied with WebP (1.01-1.20x) and 1.1-1.7x behind AVIF. On individual samples
+CAPS already beats AVIF (e.g. photo_01 at .995: 45,121 vs 47,581 bytes).
 
-CAPS encodes a 512px preview in roughly 3.9-4.2 ms (8 threads) and decodes in
-~4 ms. The comparable AVIF path (ffmpeg/libsvtav1, including process and file
-I/O) takes ~40-70 ms to encode, so CAPS is roughly an order of magnitude
-cheaper to encode at a competitive-or-better byte count than JPEG/WebP on the
-low gate. No production CPU-cost claim should be made from these timings
-(the harness scopes are not equivalent), but the direction is strong.
+CAPS encodes a 512px preview in roughly 5.4 ms (8 threads) and decodes in
+~5.8 ms; a 1536px expanded image takes ~12-14 ms each way. The comparable
+AVIF path (ffmpeg/libsvtav1, including process and file I/O) takes ~65-87 ms
+to encode, so CAPS is roughly an order of magnitude cheaper to encode at a
+competitive-or-better byte count than JPEG/WebP on the low and middle gates.
+No production CPU-cost claim should be made from these timings (the harness
+scopes are not equivalent), but the direction is strong.
 
 ## What changed in v2
 

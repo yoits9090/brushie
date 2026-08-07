@@ -14,17 +14,21 @@ and [design_candidates.md](design_candidates.md); the format is specified in
 ## Competitive status (512px chat-preview profile, equal MS-SSIM gates)
 
 Mean bytes at each gate on the repository's deterministic four-scale MS-SSIM
-proxy (6 photographs + synthetic chat + synthetic meme):
+proxy (6 photographs + synthetic chat + synthetic meme; 512px chat-preview
+and 1536px expanded profiles):
 
-| Gate | CAPS v2 | WebP | AVIF | JPEG |
-|---|---:|---:|---:|---:|
-| .970 | **7,039** | 8,739 | 4,095 | 12,396 |
-| .985 | 12,000 | 10,099 | 8,568 | 14,971 |
-| .995 | 23,327 | 19,704 | 18,560 | 36,428 |
+| Profile | Gate | CAPS v2 | WebP | AVIF | JPEG |
+|---|---|---:|---:|---:|---:|
+| chat 512px | .970 | **8,848** | 11,906 | 5,290 | 15,485 |
+| chat 512px | .985 | **12,203** | 12,586 | 9,067 | 16,772 |
+| chat 512px | .995 | 23,508 | 19,668 | 18,564 | 32,803 |
+| expanded | .970 | **17,286** | 25,108 | 11,454 | 35,501 |
+| expanded | .985 | **21,969** | 25,808 | 18,340 | 36,463 |
+| expanded | .995 | 39,231 | 38,719 | 35,212 | 56,314 |
 
-CAPS beats JPEG at every gate, beats WebP at the .970 gate, and trails WebP
-by ~1.2x and AVIF by ~1.3-1.7x at higher gates, while encoding about 10x
-cheaper than AVIF (see [enterprise_readiness.md](enterprise_readiness.md)).
+CAPS beats JPEG at every gate and beats WebP at the .970/.985 gates on both
+profiles; it ties WebP at .995 and trails AVIF by ~1.1-1.7x, while encoding
+roughly 10x cheaper than AVIF (see [enterprise_readiness.md](enterprise_readiness.md)).
 LPIPS and blinded human preference tests are still required before making
 customer-facing perceptual claims; MS-SSIM values use the repository's
 deterministic proxy.
