@@ -155,3 +155,15 @@ results from the parameter sweep:
 The hard photo now crosses .995 at q97 in 91,072 B rather than q100 in
 241,350 B. This should put CAPS below full-coverage WebP/JPEG2000 at .995;
 a clean exhaustive rerun is required before publishing the final aggregate.
+
+### Adaptive base-depth mode (SHIPPED as encoder option)
+Corrected-metric sweep found complementary modes at 512px:
+
+- base target 64 (historical default) wins photographs and the .995 tier;
+- base target 32 cuts UI/meme .970 by ~23% and .985 by ~10%, but hurts
+  photographs and high-quality UI.
+
+`EncodeOptions.base_target` and CLI `--base-target 32|64` expose both; pyramid
+levels/base dimensions already self-describe the mode, so there is no stream
+format flag or decoder change. Harness v3 now competes both targets per
+quality and selects the smallest actual match.

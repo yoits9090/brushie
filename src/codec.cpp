@@ -824,8 +824,9 @@ struct BandPyramid {
 // (moved), so the peak footprint is the pyramid plus the current level only.
 static void build_band_pyramid(std::vector<std::int32_t>& plane,
                                std::uint32_t w, std::uint32_t h,
-                               std::uint32_t threads, BandPyramid& pyramid) {
-  const std::uint32_t target = safe_base_target(w, h);
+                               std::uint32_t threads, std::uint32_t requested_target,
+                               BandPyramid& pyramid) {
+  const std::uint32_t target = requested_target ? requested_target : safe_base_target(w, h);
   std::vector<std::int32_t> cur = std::move(plane);
   while (std::min(w, h) > target && w > 1 && h > 1) {
     BandLevel level;
@@ -1034,6 +1035,11 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     fail(error, "tile size must be in 1..128");
     return false;
   }
+  if (effective.base_target != 0 &&
+      (effective.base_target < 16 || effective.base_target > 128)) {
+    fail(error, "base target must be zero or in 16..128");
+    return false;
+  }
   const bool subsample_chroma = effective.quality < 95;
   const bool has_alpha = image.channels == 4;
 
@@ -1046,11 +1052,11 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   }
 
   BandPyramid pyr0, pyr1, pyr2, pyr3;
-  build_band_pyramid(planes[0], image.width, image.height, effective.threads, pyr0);
-  build_band_pyramid(planes[1], cw, ch, effective.threads, pyr1);
-  build_band_pyramid(planes[2], cw, ch, effective.threads, pyr2);
+  build_band_pyramid(planes[0], image.width, image.height, effective.threads, effective.base_target, pyr0);
+  build_band_pyramid(planes[1], cw, ch, effective.threads, effective.base_target, pyr1);
+  build_band_pyramid(planes[2], cw, ch, effective.threads, effective.base_target, pyr2);
   if (has_alpha)
-    build_band_pyramid(planes[3], image.width, image.height, effective.threads, pyr3);
+    build_band_pyramid(planes[3], image.width, image.height, effective.threads, effective.base_target, pyr3);
 
   // Collect one band reference per (layer, band, channel) in coarse-to-fine
   // order so that a decoder can stop after any progressive layer.

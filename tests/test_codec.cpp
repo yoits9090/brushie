@@ -159,6 +159,35 @@ int main() {
     assert(a.bytes == b.bytes);
   }
   {
+    // The encoder may compete 32- and 64-base modes without a format flag;
+    // levels/base dimensions in the stream make both self-describing.
+    const unsigned w = 257, h = 193;
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
+    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
+      const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 3;
+      src[i] = static_cast<std::uint8_t>((x * 3 + y * 7) & 255);
+      src[i + 1] = static_cast<std::uint8_t>((x * 11 + y) & 255);
+      src[i + 2] = static_cast<std::uint8_t>(((x ^ y) * 9) & 255);
+    }
+    brushie::EncodeOptions options;
+    options.quality = 100;
+    options.threads = 4;
+    options.base_target = 32;
+    brushie::EncodedImage deep, shallow;
+    std::string error;
+    assert(brushie::encode({src.data(), w, h, 0}, options, deep, &error));
+    options.base_target = 64;
+    assert(brushie::encode({src.data(), w, h, 0}, options, shallow, &error));
+    assert(deep.stats.pyramid_levels > shallow.stats.pyramid_levels);
+    assert(deep.stats.base_width < shallow.stats.base_width);
+    for (const auto* encoded : {&deep, &shallow}) {
+      std::vector<std::uint8_t> decoded;
+      assert(brushie::decode(encoded->bytes.data(), encoded->bytes.size(), w, h,
+                             decoded, -1, &error));
+      assert(decoded == src);
+    }
+  }
+  {
     // q99 must remain a real lossy high-quality point, not collapse to the
     // q100 lossless stream (regression for the harness-v3 .995 cliff fix).
     const unsigned w = 257, h = 193;

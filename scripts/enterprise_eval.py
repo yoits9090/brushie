@@ -221,9 +221,9 @@ def run_caps(
     height, width = original.shape[:2]
     # Tile size is irrelevant in the v2 whole-band format; sweep quality only.
     for quality in range(1, 101):
-        for tile in (64,):
-            encoded = temp / f"{stem}.brbr-q{quality}-t{tile}.brbr"
-            output = temp / f"{stem}.brbr-q{quality}-t{tile}.ppm"
+        for tile, base_target in ((64, 32), (64, 64)):
+            encoded = temp / f"{stem}.brbr-q{quality}-t{tile}-b{base_target}.brbr"
+            output = temp / f"{stem}.brbr-q{quality}-t{tile}-b{base_target}.ppm"
             start = time.perf_counter()
             encode = subprocess.run(
                 [
@@ -234,6 +234,8 @@ def run_caps(
                     str(quality),
                     "8",
                     str(tile),
+                    "--base-target",
+                    str(base_target),
                 ],
                 capture_output=True,
                 text=True,
@@ -260,7 +262,7 @@ def run_caps(
             rows.append(
                 candidate(
                     "CAPS",
-                    f"q={quality},tile={tile}",
+                    f"q={quality},tile={tile},base={base_target}",
                     encoded,
                     original,
                     reconstructed,
@@ -281,9 +283,9 @@ def run_caps(
                 # Decode the actual truncated physical prefix, not the full
                 # file with a logical layer limit. This validates deployable
                 # progressive streaming bytes.
-                prefix_stream = temp / f"{stem}.q{quality}.brbr-prefix-l{layer}.brbr"
+                prefix_stream = temp / f"{stem}.q{quality}.b{base_target}.brbr-prefix-l{layer}.brbr"
                 prefix_stream.write_bytes(encoded_data[:prefix_size])
-                layer_output = temp / f"{stem}.q{quality}.brbr-preview-l{layer}.ppm"
+                layer_output = temp / f"{stem}.q{quality}.b{base_target}.brbr-preview-l{layer}.ppm"
                 layer_decode = subprocess.run(
                     [
                         str(CLI),
@@ -305,6 +307,7 @@ def run_caps(
                         **sample,
                         "quality": quality,
                         "tile": tile,
+                        "base_target": base_target,
                         "layer": layer,
                         "prefix_bytes": prefix_size,
                         "full_bytes": encoded.stat().st_size,
@@ -699,6 +702,7 @@ def preview_summary(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                     "preview_threshold": threshold,
                     "quality": best["quality"],
                     "tile": best["tile"],
+                    "base_target": best["base_target"],
                     "layer": best["layer"],
                     "prefix_bytes": best["prefix_bytes"],
                     "full_bytes": best["full_bytes"],
@@ -850,7 +854,7 @@ def write_manifest(
         "candidate_count": len(candidates),
         "samples": [samples[k] for k in sorted(samples)],
         "codec_configs": {
-            "CAPS": "quality 1..100, 8 threads, whole-band v2",
+            "CAPS": "quality 1..100, base target 32/64, 8 threads, whole-band v2",
             "JPEG": "Pillow quality 1..100; optimized; sequential/progressive; 4:2:0 and 4:4:4",
             "WebP": "Pillow quality 1..100 method=6 exact=True plus lossless endpoint",
             "AVIF": "ffmpeg libsvtav1 CRF 1..63; preset=4; avif=1:tune=0:lp=8; yuv420p",

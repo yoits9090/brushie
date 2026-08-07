@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
         if (arg == "--quality") options.quality = static_cast<std::uint8_t>(std::stoul(need("--quality")));
         else if (arg == "--threads") options.threads = static_cast<std::uint32_t>(std::stoul(need("--threads")));
         else if (arg == "--tile") options.tile_size = static_cast<std::uint32_t>(std::stoul(need("--tile")));
+        else if (arg == "--base-target") options.base_target = static_cast<std::uint32_t>(std::stoul(need("--base-target")));
         else if (arg == "--target-bytes") options.target_bytes = std::stoull(need("--target-bytes"));
         else if (arg == "--target-lpips") options.target_lpips = std::stod(need("--target-lpips"));
         else if (arg == "--adaptive-tile") options.adaptive_tile = true;
@@ -180,7 +181,8 @@ int main(int argc, char** argv) {
               << " bpp=" << (8.0 * encoded.bytes.size() / (image.w * static_cast<double>(image.h)))
               << " levels=" << encoded.stats.pyramid_levels << " chunks=" << encoded.stats.chunks
               << " quality=" << static_cast<unsigned>(encoded.bytes[20])
-              << " tile=" << (encoded.bytes[18] | (static_cast<unsigned>(encoded.bytes[19]) << 8));
+              << " tile=" << (encoded.bytes[18] | (static_cast<unsigned>(encoded.bytes[19]) << 8))
+              << " base=" << encoded.stats.base_width << "x" << encoded.stats.base_height;
     if (options.target_bytes != 0) std::cout << " target_bytes=" << options.target_bytes;
     if (options.target_lpips > 0.0) std::cout << " target_lpips_unverified=" << options.target_lpips;
     std::cout << '\n';

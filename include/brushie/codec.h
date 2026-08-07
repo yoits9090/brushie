@@ -19,6 +19,10 @@ struct EncodeOptions {
   std::uint8_t quality = 82;  // 1..100; 100 is integer-transform exact.
   std::uint32_t threads = 8;
   std::uint32_t tile_size = 32;
+  // Optional final LL target (normally 32 or 64). Zero uses the historical
+  // dimension-based default. The stream stores levels/base dims, so decoder
+  // support is automatic and no format flag is needed.
+  std::uint32_t base_target = 0;
   // Optional rate-control hints. They select a deterministic operating point
   // before the single pyramid/stream pass; the resulting byte count is still
   // reported by EncodeStats and may differ from the hint.
