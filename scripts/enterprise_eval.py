@@ -237,8 +237,8 @@ def run_caps(
     # Tile size is irrelevant in the v2 whole-band format; sweep quality only.
     for quality in (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 82, 85, 90):
         for tile in (64,):
-            encoded = temp / f"{stem}.caps-q{quality}-t{tile}.caps"
-            output = temp / f"{stem}.caps-q{quality}-t{tile}.ppm"
+            encoded = temp / f"{stem}.brbr-q{quality}-t{tile}.brbr"
+            output = temp / f"{stem}.brbr-q{quality}-t{tile}.ppm"
             encode = subprocess.run(
                 [
                     str(CLI),
@@ -285,7 +285,7 @@ def run_caps(
                 continue
             prefix = caps_prefix_bytes(encoded)
             for layer, prefix_size in prefix.items():
-                layer_output = temp / f"{stem}.caps-preview-l{layer}.ppm"
+                layer_output = temp / f"{stem}.brbr-preview-l{layer}.ppm"
                 layer_decode = subprocess.run(
                     [
                         str(CLI),

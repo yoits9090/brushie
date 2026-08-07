@@ -48,10 +48,10 @@ bool write_ppm(const std::string& path, std::uint32_t w, std::uint32_t h,
 }
 
 void usage() {
-  std::cerr << "brushie encode input.ppm output.caps [quality=82] [threads=8] [tile=32]\n"
+  std::cerr << "brushie encode input.ppm output.brbr [quality=82] [threads=8] [tile=64]\n"
             << "                 [--quality Q] [--threads N] [--tile T] [--adaptive-tile]\n"
             << "                 [--target-bytes N] [--target-lpips X]\n"
-            << "brushie decode input.caps output.ppm width height [layer=-1]\n";
+            << "brushie decode input.brbr output.ppm width height [layer=-1]\n";
 }
 
 }  // namespace

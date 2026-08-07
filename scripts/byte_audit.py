@@ -97,9 +97,9 @@ def audit(path: Path) -> list[dict]:
                      "actual_total_bytes": g["directory_bytes"] + g["payload_bytes"]})
     return rows
 
-files = [ROOT / "examples/kodak01_512_q82.caps"]  # legacy v1 example
-files.extend(Path("/tmp").glob("kodak01_4096*.caps"))
-files.extend(Path("/tmp").glob("kodak512-delta.caps"))
+files = [ROOT / "examples/kodak01_512_q82.brbr"]  # legacy v1 example
+files.extend(Path("/tmp").glob("kodak01_4096*.brbr"))
+files.extend(Path("/tmp").glob("kodak512-delta.brbr"))
 rows = []
 for f in files:
     if f.exists(): rows.extend(audit(f))

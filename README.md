@@ -50,8 +50,8 @@ clang++ -std=c++17 -O3 -ffast-math -Iinclude src/codec.cpp src/main.cpp -o build
 ## Use
 
 ```sh
-build/brushie encode input.ppm output.caps 45 8 64
-build/brushie decode output.caps output.ppm 4096 4096 -1
+build/brushie encode input.ppm output.brbr 45 8 64
+build/brushie decode output.brbr output.ppm 4096 4096 -1
 ```
 
 `decode ... 0` emits the coarse LL layer only. `-1` emits every available
@@ -63,8 +63,8 @@ is kept 4:4:4). Lower qualities use 4:2:0 chroma and progressively coarser
 steps. One-pass analytical rate hints (the actual byte count is reported):
 
 ```sh
-build/brushie encode input.ppm output.caps --target-bytes 250000 --threads 8
-build/brushie encode input.ppm output.caps --target-lpips 0.06 --threads 8
+build/brushie encode input.ppm output.brbr --target-bytes 250000 --threads 8
+build/brushie encode input.ppm output.brbr --target-lpips 0.06 --threads 8
 ```
 
 `--target-lpips` exposes the requested control surface but is marked
