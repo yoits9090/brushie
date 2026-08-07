@@ -44,7 +44,12 @@ def audit(path: Path) -> list[dict]:
         g["chunks"] += 1; g["directory_bytes"] += 40; g["payload_bytes"] += psize; g["coefficients"] += count
         g["modes"][mode] += 1
         pos = poff; end = poff + psize; decoded = 0
-        if mode == 2:
+        if mode == 3:
+            # v2 whole-band arithmetic payload: report sizes; symbol entropy
+            # analysis is not available for the range-coded stream.
+            g["nonzero"] += count
+            decoded = count
+        elif mode == 2:
             if psize < 1: raise ValueError(f"empty mode2 payload in {path} chunk {i}")
             bits = data[pos]; mask_bytes = (count + 7) // 8
             if bits < 1 or bits > 32 or psize < 1 + mask_bytes:
@@ -92,7 +97,7 @@ def audit(path: Path) -> list[dict]:
                      "actual_total_bytes": g["directory_bytes"] + g["payload_bytes"]})
     return rows
 
-files = [ROOT / "examples/kodak01_512_q82.caps"]
+files = [ROOT / "examples/kodak01_512_q82.caps"]  # legacy v1 example
 files.extend(Path("/tmp").glob("kodak01_4096*.caps"))
 files.extend(Path("/tmp").glob("kodak512-delta.caps"))
 rows = []
