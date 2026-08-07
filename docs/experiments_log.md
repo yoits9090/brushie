@@ -167,3 +167,11 @@ Corrected-metric sweep found complementary modes at 512px:
 levels/base dimensions already self-describe the mode, so there is no stream
 format flag or decoder change. Harness v3 now competes both targets per
 quality and selects the smallest actual match.
+
+### Corrected-metric diagonal/chroma allocation (SHIPPED)
+A 6-variant quick-corpus sweep under harness v3 found quality-dependent
+weights with no gate tradeoff: below q95 use diagonal 1.8x and chroma 2.5x;
+at q95+ relax to diagonal 1.2x and chroma 2.0x. Compared with 1.5x/2.0x,
+expected full-coverage means improve ~1% (.970), ~1.4% (.985), and ~4%
+(.995). Alpha was also fixed to follow luma rather than accidentally receiving
+chroma's multiplier.

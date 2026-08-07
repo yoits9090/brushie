@@ -600,8 +600,11 @@ static std::uint16_t quant_step(std::uint8_t quality,
   const double exponent = quality < 95 ? 1.25 : 0.8;
   const double weight = std::pow(2.0, exponent * std::min<double>(coarseness, 3.0));
   double step = root * weight;
-  if (band == 3) step *= 1.5;
-  if (channel != 0) step *= 2.0;
+  // Corrected-metric allocation: delivery qualities can mask diagonal and
+  // chroma error more aggressively; q95+ relaxes both for the visually-
+  // lossless tier. Alpha (channel 3) follows luma, never chroma weighting.
+  if (band == 3) step *= quality < 95 ? 1.8 : 1.2;
+  if (channel == 1 || channel == 2) step *= quality < 95 ? 2.5 : 2.0;
   return static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
 }
@@ -613,7 +616,7 @@ static std::uint16_t base_quant_step(std::uint8_t quality,
   // The base LL is preserved with a finer step (0.5x root): low-frequency
   // structure dominates the SSIM-family gates and is cheap to code.
   double step = 0.5 * (1.0 + static_cast<double>(loss) / 6.0);
-  if (channel != 0) step *= 2.0;
+  if (channel == 1 || channel == 2) step *= quality < 95 ? 2.5 : 2.0;
   return static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
 }
