@@ -95,12 +95,40 @@ int main() {
         std::cerr << "lossless mismatch at " << w << "x" << h << "\n";
         return 1;
       }
-      // Progressive prefix decode must succeed at every layer.
+      // Progressive decode must work both from the full stream and from a
+      // physically truncated header+directory+selected-payload prefix.
+      auto u16 = [](const std::uint8_t* p) -> std::uint16_t {
+        return static_cast<std::uint16_t>(p[0] | (static_cast<std::uint16_t>(p[1]) << 8));
+      };
+      auto u32 = [](const std::uint8_t* p) -> std::uint32_t {
+        return static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8) |
+               (static_cast<std::uint32_t>(p[2]) << 16) | (static_cast<std::uint32_t>(p[3]) << 24);
+      };
+      auto u64 = [](const std::uint8_t* p) -> std::uint64_t {
+        std::uint64_t v = 0;
+        for (int i = 0; i < 8; ++i) v |= static_cast<std::uint64_t>(p[i]) << (i * 8);
+        return v;
+      };
+      const std::uint32_t chunks = u32(encoded.bytes.data() + 32);
+      const std::size_t payload_start = static_cast<std::size_t>(u64(encoded.bytes.data() + 40));
       for (int layer = 0; layer <= static_cast<int>(encoded.stats.pyramid_levels); ++layer) {
-        std::vector<std::uint8_t> prefix;
+        std::vector<std::uint8_t> full_output;
         assert(brushie::decode(encoded.bytes.data(), encoded.bytes.size(), w, h,
-                               prefix, layer, &error));
-        assert(prefix.size() == src.size());
+                               full_output, layer, &error));
+        assert(full_output.size() == src.size());
+        std::size_t prefix_size = payload_start;
+        for (std::uint32_t ci = 0; ci < chunks; ++ci) {
+          const std::uint8_t* d = encoded.bytes.data() + 64 + static_cast<std::size_t>(ci) * 40;
+          if (u16(d) > layer) continue;
+          const std::size_t end = static_cast<std::size_t>(u64(d + 20)) + u32(d + 28);
+          if (end > prefix_size) prefix_size = end;
+        }
+        std::vector<std::uint8_t> physical_prefix(
+            encoded.bytes.begin(), encoded.bytes.begin() + prefix_size);
+        std::vector<std::uint8_t> prefix_output;
+        assert(brushie::decode(physical_prefix.data(), physical_prefix.size(), w, h,
+                               prefix_output, layer, &error));
+        assert(prefix_output == full_output);
       }
       // Scaled decode must succeed.
       std::vector<std::uint8_t> scaled;

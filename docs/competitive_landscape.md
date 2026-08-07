@@ -49,22 +49,26 @@ codecs" does not hold up. Mature codecs (JPEG XL, AVIF, jpegli) are the real
 competition; the independent repos are a source of *techniques* (activity
 quantization, lapped transforms, grain, context counts), not a shortcut.
 
-## Where Brushie stands (measured, MS-SSIM-proxy gates, 8-sample corpus)
+## Where Brushie stands (corrected harness v3)
 
-| Profile | Gate | CAPS v2 | WebP | AVIF | JPEG |
-|---|---|---|---|---:|---:|
-| chat 512px | .970 | 8,848 | 11,906 | 5,290 | 15,485 |
-| chat 512px | .985 | 12,203 | 12,586 | 9,067 | 16,772 |
-| chat 512px | .995 | 23,508 | 19,668 | 18,564 | 32,803 |
-| expanded | .970 | 17,286 | 25,108 | 11,454 | 35,501 |
-| expanded | .985 | 21,969 | 25,808 | 18,340 | 36,463 |
-| expanded | .995 | 39,231 | 38,719 | 35,212 | 56,314 |
+The historical global-moment proxy overstated Brushie's performance. Harness
+v3 uses local-window multiscale SSIM, exhaustive integer quality sweeps,
+strong WebP/JPEG modes, still-image AVIF, honest full-coverage aggregates, and
+actual truncated progressive streams. Corrected quick profile (2 Kodak photos
++ chat + meme, all 4/4 coverage):
 
-vs JPEG: wins every gate (1.4-2x). vs WebP: wins .970/.985, ~ties .995.
-vs AVIF: 1.1-1.7x behind. Encode: ~10-15x cheaper than AVIF (5-14 ms vs
-40-90 ms for the same images). This is "better than JPEG/WebP on cost and
-bytes at low/mid quality, and much cheaper than AVIF" — a real, defensible
-position, but NOT yet "beats every format".
+| Windowed MS-SSIM gate | AVIF | WebP | strong JPEG | CAPS |
+|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,659 | 10,140 | 11,347 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,351 |
+| .995 | 31,810 | 65,498 | 32,427 | 77,869 |
+
+Brushie is currently 48% larger than WebP and 75% larger than AVIF at .970;
+39%/49% larger at .985; and 2.4x larger than AVIF/strong JPEG at .995. That
+is the real optimization baseline. Historical claims that CAPS beat WebP and
+JPEG are invalidated. See `docs/harness_v3.md` for the failure analysis and
+exact methodology. Cross-codec CPU claims are withdrawn until timing scopes,
+repeats, and thread/resource budgets are normalized.
 
 ## The gap to AVIF/JPEG XL, decomposed
 
@@ -103,21 +107,10 @@ Benchmarks to beat next: jpegli (beats WebP) at .970-.995, then AVIF, then
 libjxl default-effort. Validation must move from the MS-SSIM proxy to
 SSIMULACRA2/Butteraugli + blinded human tests before any customer claim.
 
-## Brushie vs JPEG 2000 (measured this session)
+## Brushie vs JPEG 2000
 
-Added ffmpeg/openjpeg JPEG 2000 to the eval harness (scripts/enterprise_eval.py).
-Per-sample at the .970 gate (512px preview, quick profile):
-
-| Sample | CAPS | JPEG2000 (openjpeg) | AVIF |
-|---|---:|---:|---:|
-| photo_01 | 11,887 | 26,126 | 8,131 |
-| photo_02 | 7,924 | 8,412 | 5,804 |
-| chat_ui | 4,785 | 4,091 | 1,345 |
-| meme_card | 3,572 | 2,850 | 1,098 |
-
-Brushie beats openjpeg's JPEG 2000 by 1.1-2.2x on photographs, while openjpeg
-wins by 15-20% on smooth synthetic content (chat/meme). This localizes the
-remaining work precisely: Brushie's low-frequency/smooth-region coding
-(base LL + coarse levels) is ~15-20% behind a mature bitplane coder there,
-while its photo coding is already ahead. The text/UI gap to AVIF (3.8x) is
-unchanged and remains the biggest structural target (roadmap M7).
+Harness v3 now benchmarks the **native FFmpeg `jpeg2000` encoder**, not
+OpenJPEG, in both yuv420p and RGB modes with adaptive qscale bracketing. Do not
+quote the earlier "CAPS beats OpenJPEG" text; it was mislabeled and used an
+unfair RGB-only sparse grid. JPEG 2000 remains diagnostic until the final v3
+rerun and a verified OpenJPEG/Kakadu baseline are available.

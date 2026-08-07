@@ -11,27 +11,25 @@ Design notes and the competitive audit are in [literature_review.md](literature_
 and [design_candidates.md](design_candidates.md); the format is specified in
 [format_spec.md](format_spec.md).
 
-## Competitive status (512px chat-preview profile, equal MS-SSIM gates)
+## Competitive status (corrected harness v3)
 
-Mean bytes at each gate on the repository's deterministic four-scale MS-SSIM
-proxy (6 photographs + synthetic chat + synthetic meme; 512px chat-preview
-and 1536px expanded profiles):
+The old scoreboard used a global-moment "MS-SSIM" proxy and overstated
+Brushie's performance. Harness v3 uses local-window multiscale SSIM, stronger
+standard-codec settings, dense sweeps, comparable wall timing, and explicit
+coverage rules. Corrected quick profile (2 Kodak photos + chat + meme):
 
-| Profile | Gate | CAPS v2 | WebP | AVIF | JPEG |
-|---|---|---:|---:|---:|---:|
-| chat 512px | .970 | **8,848** | 11,906 | 5,290 | 15,485 |
-| chat 512px | .985 | **12,203** | 12,586 | 9,067 | 16,772 |
-| chat 512px | .995 | 23,508 | 19,668 | 18,564 | 32,803 |
-| expanded | .970 | **17,286** | 25,108 | 11,454 | 35,501 |
-| expanded | .985 | **21,969** | 25,808 | 18,340 | 36,463 |
-| expanded | .995 | 39,231 | 38,719 | 35,212 | 56,314 |
+| Gate | AVIF | WebP | CAPS | Strong JPEG |
+|---:|---:|---:|---:|---:|
+| .970 (4/4 coverage) | 7,352 | 8,983 | 11,516 | 11,565 |
+| .985 (4/4 coverage) | 13,883 | 15,268 | 24,444 | 20,040 |
+| .995 full coverage | partial | partial | 78,254 | 52,215 |
 
-CAPS beats JPEG at every gate and beats WebP at the .970/.985 gates on both
-profiles; it ties WebP at .995 and trails AVIF by ~1.1-1.7x, while encoding
-roughly 10x cheaper than AVIF (see [enterprise_readiness.md](enterprise_readiness.md)).
-LPIPS and blinded human preference tests are still required before making
-customer-facing perceptual claims; MS-SSIM values use the repository's
-deterministic proxy.
+CAPS currently ties optimized/progressive JPEG at .970, but trails WebP/AVIF;
+at .985 it trails all three. This corrected baseline is the optimization
+north star. See [docs/harness_v3.md](docs/harness_v3.md) for the defects,
+method, coverage caveats, and exact numbers. No customer-facing perceptual or
+CPU claims should be made before SSIMULACRA2/Butteraugli and blinded-human
+validation.
 
 ## Build
 
@@ -79,14 +77,17 @@ CPU core.
 
 ## Enterprise evaluation
 
-The enterprise harness compares codecs at equal MS-SSIM-proxy gates instead
-of comparing unrelated quality settings. It routes photo and synthetic chat/UI
-content through a 512-pixel chat-preview profile and, unless `--quick` is
-used, a 1536-pixel expanded-image profile.
+Harness v3 compares codecs at equal **local-window multiscale SSIM** gates
+instead of unrelated quality settings or the retired global-moment proxy. It
+uses exhaustive integer quality sweeps, strong JPEG/WebP modes, still-image
+AVIF, honest full-coverage aggregation, reproducibility manifests, and actual
+truncated progressive streams. The full run includes Kodak plus available
+DIV2K validation sources and a `native_expanded` max-1536 profile (sources are
+not upscaled).
 
 ```sh
 python3 scripts/enterprise_eval.py --quick
-python3 scripts/enterprise_eval.py --output-prefix enterprise_eval
+python3 scripts/enterprise_eval.py --output-prefix harness_v3_full
 ```
 
 The harness writes candidate, matched-quality, aggregate, progressive, and

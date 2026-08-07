@@ -1,8 +1,9 @@
 # Brushie roadmap: from "beats JPEG/WebP" to "beats every format"
 
-Status as of this session: **v2 wavelet codec** — beats JPEG at every gate,
-beats WebP at .970/.985, ~ties at .995, 1.1-1.7x behind AVIF, ~10-15x cheaper
-to encode than AVIF. This file tracks the campaign to beat AVIF and JPEG XL.
+Status after harness-v3 correction: **v2 wavelet codec** — ties strong JPEG
+only at the .970 gate, trails WebP/AVIF, and has a severe full-coverage .995
+rate gap. Historical "beats WebP/JPEG" and 10-15x timing claims are invalid.
+See `docs/harness_v3.md`. This file tracks the campaign to beat AVIF and JPEG XL.
 
 ## Rules of engagement (unchanged)
 
@@ -21,10 +22,9 @@ dominated the payload.
 
 ### M2 (DONE) — v2 wavelet codec
 Context-adaptive arithmetic coding, whole-band chunks, frequency-ordered
-midtread quantization, 4:2:0 chroma, median-predicted LL, RGBA, PNG I/O,
-fuzzing. Result: beats JPEG everywhere, beats WebP at .970/.985, ties .995,
-1.1-1.7x behind AVIF. Docs: format_spec.md, enterprise_readiness.md,
-competitive_landscape.md.
+midtread quantization, 4:2:0 chroma, median-predicted LL, RGBA, PNG I/O, and
+fuzzing. The engineering gains are real, but harness v3 invalidated the old
+competitive ranking; corrected quick numbers are in `docs/harness_v3.md`.
 
 ### M3 (RESULT: REJECTED on the MS-SSIM proxy) — activity-aware quantization
 AUREA-style zero-bit activity map was implemented and measured in both
@@ -71,7 +71,7 @@ for UI content, (c) accept the gap and win on photo/web workloads instead.
 
 1. jpegli (JPEG-compatible, beats WebP): match or beat at .970-.995.
 2. WebP at every gate (currently losing .995 by ~1.2x).
-3. AVIF at every gate (currently losing 1.1-1.7x).
+3. AVIF at every gate (currently 1.5-2.4x larger on corrected quick gates).
 4. libjxl default effort on the same corpus (the current king).
 
 ## Track record (session log)

@@ -1231,6 +1231,7 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
       lev.detail[c][2].assign(static_cast<std::size_t>(lev.w / 2) * (lev.h / 2), 0);
     }
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
+  std::uint64_t expected_payload_offset = data_offset;
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
     const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * kDirectoryBytes;
     const std::uint16_t layer = get_u16(d + 0);
@@ -1241,14 +1242,23 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
     const std::uint64_t offset = get_u64(d + 20);
     const std::uint32_t payload_size = get_u32(d + 28), count = get_u32(d + 32);
     const std::uint32_t checksum = get_u32(d + 36);
+    if (offset != expected_payload_offset ||
+        offset > std::numeric_limits<std::uint64_t>::max() - payload_size) {
+      fail(error, "invalid CAPS payload layout");
+      return false;
+    }
+    expected_payload_offset = offset + payload_size;
     if (channel >= 3 || band > 3 || mode > 2 || step == 0 || tw == 0 || th == 0 ||
         tw > tile || th > tile || count != static_cast<std::uint64_t>(tw) * th ||
-        offset < data_offset || offset > size || payload_size > size - offset ||
         layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
       return false;
     }
     if (layer > static_cast<std::uint16_t>(std::max(0, highest_layer))) continue;
+    if (offset < data_offset || offset > size || payload_size > size - offset) {
+      fail(error, "truncated selected-layer payload");
+      return false;
+    }
     const std::uint8_t* payload = data + offset;
     if (fnv1a(payload, payload_size) != checksum) {
       fail(error, "coefficient chunk checksum mismatch");
@@ -1282,6 +1292,10 @@ static bool decode_v1(const std::uint8_t* data, std::size_t size,
     }
     if (!decode_tile(payload, payload_size, count, static_cast<std::uint16_t>(step), mode,
                      destination, stride, tw, th, error)) return false;
+  }
+  if (highest_layer >= static_cast<int>(levels) && expected_payload_offset != size) {
+    fail(error, "trailing or missing CAPS payload bytes");
+    return false;
   }
   std::array<std::vector<std::int32_t>, 3> reconstructed;
   reconstructed = std::move(base);
@@ -1405,6 +1419,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   if (channels == 4) allocate_levels(shapes3);
 
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
+  std::uint64_t expected_payload_offset = data_offset;
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
     const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * kDirectoryBytes;
     const std::uint16_t layer = get_u16(d + 0);
@@ -1416,22 +1431,33 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     const std::uint64_t offset = get_u64(d + 20);
     const std::uint32_t payload_size = get_u32(d + 28), count = get_u32(d + 32);
     const std::uint32_t checksum = get_u32(d + 36);
+    if (offset != expected_payload_offset ||
+        offset > std::numeric_limits<std::uint64_t>::max() - payload_size) {
+      fail(error, "invalid CAPS payload layout");
+      return false;
+    }
+    expected_payload_offset = offset + payload_size;
     if (channel >= channels || band > 3 || mode != 3 || step == 0 || tw == 0 || th == 0 ||
-        count != static_cast<std::uint64_t>(tw) * th ||
-        offset < data_offset || offset > size || payload_size > size - offset ||
-        layer > levels) {
+        count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
       return false;
     }
+    // A progressive physical prefix contains the complete header+directory
+    // but only payloads through the requested layer. Later-layer payload
+    // offsets can legitimately lie beyond `size`; skip before validating them.
     if (layer > static_cast<std::uint16_t>(std::max(0, highest_layer))) continue;
+    if (offset < data_offset || offset > size || payload_size > size - offset) {
+      fail(error, "truncated selected-layer payload");
+      return false;
+    }
     std::vector<BandLevel>& shapes =
         channel == 0 ? shapes0 : (channel == 1 ? shapes1 : (channel == 2 ? shapes2 : shapes3));
     std::int32_t* destination = nullptr;
     std::uint32_t stride = 0, band_w = 0, band_h = 0;
     if (layer == 0) {
       // Channel 3 (alpha) is coded at full resolution like channel 0.
-      const std::uint32_t b_w = channel <= 1 || channel == 3 ? base_w : ch_base_w;
-      const std::uint32_t b_h = channel <= 1 || channel == 3 ? base_h : ch_base_h;
+      const std::uint32_t b_w = channel == 0 || channel == 3 ? base_w : ch_base_w;
+      const std::uint32_t b_h = channel == 0 || channel == 3 ? base_h : ch_base_h;
       if (band != 0 || x != 0 || y != 0 || tw != b_w || th != b_h) {
         fail(error, "base chunk out of bounds");
         return false;
@@ -1467,6 +1493,10 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
   }
 
+  if (highest_layer >= static_cast<int>(levels) && expected_payload_offset != size) {
+    fail(error, "trailing or missing CAPS payload bytes");
+    return false;
+  }
   std::array<std::vector<std::int32_t>, 4> rec;
   rec[0] = std::move(base[0]);
   rec[1] = std::move(base[1]);

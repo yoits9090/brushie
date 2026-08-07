@@ -1,3 +1,7 @@
+> **Metric correction:** All competitive rankings below that cite the retired
+> global-moment proxy are historical engineering diagnostics only. Harness v3
+> invalidated the "beats WebP/JPEG" conclusions. Use `docs/harness_v3.md`.
+
 # Experiment log (session)
 
 Every intervention that was tried and either shipped or rejected, with the
@@ -124,9 +128,9 @@ activity quantization, RDOQ-lite) failed to beat the empirically-calibrated
 v2 baseline on the MS-SSIM proxy. The remaining levers are all larger
 architectural items (bitplane refinement, per-context RDO, directional
 prediction) tracked in docs/roadmap.md M4-M7. The v2 codec's measured
-position (beats JPEG everywhere, beats WebP at .970/.985, ties .995,
-1.1-1.7x behind AVIF, ~10x cheaper encode than AVIF) is the honest current
-ceiling of this architecture within this campaign's budget.
+historical position is invalidated by harness v3. Corrected quick results put
+CAPS behind strong JPEG/WebP/AVIF; the architecture must now optimize against
+`brushie-box11-ms-ssim-v1`, not the retired proxy.
 
 ## Shipped (continued)
 

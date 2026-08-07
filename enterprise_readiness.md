@@ -1,92 +1,67 @@
-# Brushie enterprise readiness
+# Brushie enterprise readiness (harness v3 reset)
 
-## Proposed product
+## Status
 
-Brushie is best evaluated as an on-premise codec SDK for platforms that own
-their media pipeline and clients. The enterprise claim to test is:
+The historical readiness tables were invalidated. The old harness used one
+global mean/variance/covariance value per RGB channel and called it MS-SSIM,
+searched CAPS much more densely than standards, underpowered WebP/JPEG/AVIF,
+compared survivor means at partial coverage, and mixed incompatible timing
+scopes. See [docs/harness_v3.md](docs/harness_v3.md).
 
-> Reduce delivered image bytes at the same human-rated quality without
-> increasing total infrastructure cost or user-visible latency.
+Corrected exhaustive quick profile (2 Kodak photos + chat + meme, local-window
+multiscale SSIM, every integer quality, strong format modes, 4/4 coverage):
 
-This is an SDK/source-license product, not initially a hosted SaaS. A
-Discord-scale customer would need to run the encoder inside its own media
-proxy and deploy trusted decoders across native, desktop, and web clients.
+| Windowed MS-SSIM gate | AVIF | WebP | optimized JPEG | CAPS |
+|---:|---:|---:|---:|---:|
+| .970 | 6,466 | 7,659 | 10,140 | 11,347 |
+| .985 | 12,948 | 13,901 | 16,328 | 19,351 |
+| .995 | 31,810 | 65,498 | 32,427 | 77,869 |
 
-## Current equal-quality result (v2 codec)
+Brushie therefore **does not currently beat WebP, AVIF, or strong JPEG** under
+the corrected gate. At .970 it is close to strong JPEG but 48% larger than
+WebP and 75% larger than AVIF. At .995 it needs lossless on one hard photo and
+is 2.4x larger than AVIF/JPEG. Those numbers are the current north star.
 
-`scripts/enterprise_eval.py` sweeps 18 quality points per sample across six
-photographs, two deterministic chat/UI images, a 512-pixel preview profile,
-and a 1536-pixel expanded-image profile. It selects the smallest candidate
-meeting each MS-SSIM-proxy gate.
+## What remains genuinely good
 
-Full profile (8 samples: 6 photographs + chat + meme; mean bytes):
+- Deterministic CPU-only codec and decoder; no per-image ML/gradient fitting.
+- Whole-band context-adaptive arithmetic coding; progressive layer order.
+- RGB/RGBA, full-resolution alpha, optional PNG CLI I/O.
+- Actual physical truncated-prefix decoding after the harness-v3 decoder fix.
+- 8,000+ mutation-fuzz cases with no crash/hang before the latest prefix fix;
+  sanitizer/fuzz rerun remains required.
+- Peak 4096^2 RSS was reduced from ~527 MB historical to ~413 MB encode /
+  ~420 MB decode on the local synthetic stress image.
 
-| Profile | Gate | CAPS v2 | WebP | AVIF | JPEG |
-|---|---|---:|---:|---:|---:|
-| chat 512px | .970 | 8,848 | 11,906 | 5,290 | 15,485 |
-| chat 512px | .985 | 12,203 | 12,586 | 9,067 | 16,772 |
-| chat 512px | .995 | 23,508 | 19,668 | 18,564 | 32,803 |
-| expanded 1536px | .970 | 17,286 | 25,108 | 11,454 | 35,501 |
-| expanded 1536px | .985 | 21,969 | 25,808 | 18,340 | 36,463 |
-| expanded 1536px | .995 | 39,231 | 38,719 | 35,212 | 56,314 |
+These are engineering assets, not evidence of format superiority.
 
-The v1 baseline at the same profile was 53,642 / 62,138 / 106,385 bytes
-(chat) and 109,348 / 124,861 / 172,973 (expanded), so the v2 codec is 4.4-6.3x
-smaller at equal proxy quality. CAPS now beats JPEG at every gate and beats
-WebP at the .970 and .985 gates on both profiles; at .995 it is essentially
-tied with WebP (1.01-1.20x) and 1.1-1.7x behind AVIF. On individual samples
-CAPS already beats AVIF (e.g. photo_01 at .995: 45,121 vs 47,581 bytes).
+## Commercial gate
 
-CAPS encodes a 512px preview in roughly 5.4 ms (8 threads) and decodes in
-~5.8 ms; a 1536px expanded image takes ~12-14 ms each way. The comparable
-AVIF path (ffmpeg/libsvtav1, including process and file I/O) takes ~65-87 ms
-to encode, so CAPS is roughly an order of magnitude cheaper to encode at a
-competitive-or-better byte count than JPEG/WebP on the low and middle gates.
-No production CPU-cost claim should be made from these timings (the harness
-scopes are not equivalent), but the direction is strong.
+Do not make a buyer-facing savings claim until all of the following hold on a
+private corpus:
 
-## What changed in v2
+1. Full-coverage paired results beat the buyer's WebP/AVIF/JPEG-XL pipeline at
+   blinded human preference, not a single proxy metric.
+2. SSIMULACRA2 or Butteraugli and local-window MS-SSIM agree directionally.
+3. End-to-end CPU, peak RSS, and power are measured from identical boundaries
+   with warmups/repeats and a fixed thread/resource budget.
+4. Alpha, ICC/color, metadata, malformed input, fuzz/sanitizers, Linux
+   x86/ARM, mobile, and WebAssembly are production-ready.
+5. Standard-format fallback and incremental rollout are documented.
 
-* **Context-adaptive arithmetic coding** replaced per-tile varint/bitpack
-  coding: 8-state significance contexts, 4 sign contexts, Golomb-Rice
-  magnitudes with adaptive k, and a median-predicted base LL band.
-* **Whole-band chunks**: one directory entry per (layer, band, channel)
-  instead of per 32-64px tile; the directory is now a rounding error.
-* **Frequency-ordered quantization**: coarse detail is quantized hardest
-  (steps grow 2^(1.25*coarseness), saturating after 3 levels), the base LL is
-  preserved with a finer step, and the diagonal band is weighted 1.5x.
-* **Chroma 4:2:0** at lossy operating points (box downsample, bilinear
-  upsample), keeping 4:4:4 for lossless.
-* **Midtread quantization** with plain q*step reconstruction; a dead-zone
-  variant was measurably worse on the frozen sweep.
+## Next engineering target
 
-## Remaining gaps
+The corrected deficit is structural, not a directory or varint problem:
 
-The biggest remaining byte gap is photos at the .970 gate (1.7x behind AVIF
-on the quick profile). The codec still uses the reversible 5/3 wavelet and
-scalar quantization; AV1-class tools (directional intra prediction,
-rate-distortion-optimized allocation, a 9/7-class lossy transform) are the
-obvious next levers, with expected gains of 10-30% on photos.
+- .970/.985: prediction/transform efficiency and smooth/text handling.
+- .995: high-quality rate allocation; one hard photo falls back to lossless.
+- Text/UI: AV1-style directional/planar prediction remains the largest gap.
 
-## Go/no-go gate
-
-Do not approach a Discord-scale buyer with an infrastructure-savings claim
-until all of the following are true on a representative private corpus:
-
-1. At least 20% fewer bytes than the buyer's current WebP/AVIF pipeline at
-   the same blinded human preference level.
-2. No increase in combined encode, decode, and CDN cost that erases the byte
-   savings.
-3. A safe incremental rollout with standard-format fallback.
-4. Production support for alpha, color profiles, metadata, malformed-input
-   hardening, fuzzing, Linux x86/ARM, mobile, and WebAssembly.
-5. A clean IP and dependency record plus explicit commercial licensing.
-
-The v2 codec is now plausibly competitive on bytes for UI/chat content and
-low-quality photo delivery, and is materially cheaper to encode than AVIF.
-The remaining work is perceptual validation (LPIPS, blinded human tests),
-the alpha/color-profile/metadata surface, security hardening, and the
-transform/rate-allocation improvements above.
+The next codec branch should prototype a **planar/directional base+coarse mode**
+for flat gradients and text/UI, compete it per image/band against the wavelet
+path, and retain it only if it lowers bytes at the corrected gate. Follow with
+coder-integrated RDO (actual context-rate estimates), not another static
+dead-zone heuristic.
 
 ## Reproduction
 
@@ -96,7 +71,11 @@ clang++ -std=c++17 -O3 -ffast-math -Wall -Wextra -Wpedantic \
 clang++ -std=c++17 -O3 -ffast-math -Wall -Wextra -Wpedantic \
   -Iinclude src/codec.cpp tests/test_codec.cpp -o build/test_codec -pthread
 ./build/test_codec
-python3 scripts/enterprise_eval.py --quick --output-prefix enterprise_eval_v2
+python3 tests/test_quality_metrics.py
+python3 tests/test_enterprise_eval_helpers.py
+python3 scripts/enterprise_eval.py --quick --output-prefix harness_v3_exhaustive_quick
 ```
 
-The primary outputs are the `enterprise_eval_v2_*` CSV and Markdown files.
+Every report emits a manifest with the metric ID, git SHA/dirty state,
+versions, exact command, source/evaluated dimensions, and codec configs.
+Partial-coverage aggregate means are blank by design.
