@@ -156,16 +156,15 @@ static void inverse_level(const std::vector<std::int32_t>& low,
   }
   // The forward transform applies rows then columns, so inversion must undo
   // columns first and rows second.
-  std::vector<std::int32_t> vertical(static_cast<std::size_t>(w) * h);
   parallel_for(w, threads, [&](std::size_t xx) {
     std::vector<std::int32_t> line(h), restored(h);
     for (std::uint32_t y = 0; y < h; ++y) line[y] = packed[y * w + xx];
     inverse_line(line.data(), restored.data(), h);
-    for (std::uint32_t y = 0; y < h; ++y) vertical[y * w + xx] = restored[y];
+    for (std::uint32_t y = 0; y < h; ++y) packed[y * w + xx] = restored[y];
   });
   output.resize(static_cast<std::size_t>(w) * h);
   parallel_for(h, threads, [&](std::size_t yy) {
-    inverse_line(vertical.data() + yy * w, output.data() + yy * w, w);
+    inverse_line(packed.data() + yy * w, output.data() + yy * w, w);
   });
 }
 
@@ -800,37 +799,40 @@ struct BandPyramid {
   std::vector<std::int32_t> base;
 };
 
-static void build_band_pyramid(const std::vector<std::int32_t>& plane,
+// Builds one channel's pyramid in place: the caller's plane is consumed
+// (moved), so the peak footprint is the pyramid plus the current level only.
+static void build_band_pyramid(std::vector<std::int32_t>& plane,
                                std::uint32_t w, std::uint32_t h,
                                std::uint32_t threads, BandPyramid& pyramid) {
   const std::uint32_t target = safe_base_target(w, h);
-  std::vector<std::int32_t> cur = plane;
+  std::vector<std::int32_t> cur = std::move(plane);
   while (std::min(w, h) > target && w > 1 && h > 1) {
     BandLevel level;
     level.w = w;
     level.h = h;
     level.lw = (w + 1) / 2;
     level.lh = (h + 1) / 2;
-    std::vector<std::int32_t> work = cur;
+    // Rows and columns are transformed in place; each line is independent.
     parallel_for(h, threads, [&](std::size_t yy) {
       std::vector<std::int32_t> line(w), packed(w);
-      std::copy_n(work.data() + yy * w, w, line.data());
+      std::copy_n(cur.data() + yy * w, w, line.data());
       forward_line(line.data(), packed.data(), w);
-      std::copy_n(packed.data(), w, work.data() + yy * w);
+      std::copy_n(packed.data(), w, cur.data() + yy * w);
     });
     parallel_for(w, threads, [&](std::size_t xx) {
       std::vector<std::int32_t> line(h), packed(h);
-      for (std::uint32_t y = 0; y < h; ++y) line[y] = work[y * w + xx];
+      for (std::uint32_t y = 0; y < h; ++y) line[y] = cur[y * w + xx];
       forward_line(line.data(), packed.data(), h);
-      for (std::uint32_t y = 0; y < h; ++y) work[y * w + xx] = packed[y];
+      for (std::uint32_t y = 0; y < h; ++y) cur[y * w + xx] = packed[y];
     });
-    extract_detail(work, w, h, level.detail);
-    cur.assign(static_cast<std::size_t>(level.lw) * level.lh, 0);
+    extract_detail(cur, w, h, level.detail);
+    std::vector<std::int32_t> next(static_cast<std::size_t>(level.lw) * level.lh);
     for (std::uint32_t y = 0; y < level.lh; ++y) {
-      std::copy_n(work.data() + static_cast<std::size_t>(y) * w, level.lw,
-                  cur.data() + static_cast<std::size_t>(y) * level.lw);
+      std::copy_n(cur.data() + static_cast<std::size_t>(y) * w, level.lw,
+                  next.data() + static_cast<std::size_t>(y) * level.lw);
     }
     pyramid.levels.push_back(std::move(level));
+    cur = std::move(next);
     w = level.lw;
     h = level.lh;
   }
