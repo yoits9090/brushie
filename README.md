@@ -6,9 +6,10 @@ midtread scalar quantization with frequency-ordered steps, and whole-band
 context-adaptive binary arithmetic coding. The current v5 stream uses a
 compact 16-byte whole-band directory (v3/v4 20-byte and v1/v2 40-byte
 streams still decode). Detail bands use per-coefficient local Rice
-parameters plus an automatic per-band 16x16 block-significance mode for
-sparse bands. Bands are ordered coarse-to-fine for progressive decoding,
-and chroma is 4:2:0 subsampled at lossy operating points.
+parameters, an automatic per-band 16x16 block-significance mode for sparse
+bands, and each level's H/V/D triple is merged into a single band-4 chunk.
+Bands are ordered coarse-to-fine for progressive decoding, and chroma is
+4:2:0 subsampled at lossy operating points.
 
 Design notes and the competitive audit are in [literature_review.md](literature_review.md)
 and [design_candidates.md](design_candidates.md); the format is specified in
@@ -30,14 +31,14 @@ all codecs 4/4 coverage):
 | .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
 The v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) cuts CAPS to
-**9,516 / 16,311 / 35,534** mean bytes at the same gates (clean exhaustive
+**9,120 / 16,162 / 35,380** mean bytes at the same gates (clean exhaustive
 quick eval, 3,323 candidates, same metric and corpus) via: v4
 sign/significance context separation, per-coefficient local Rice
 parameters, a metric-calibrated base multiplier, per-band 16x16
 block-significance modes for sparse bands, a 16-byte v5 directory, and
-Catmull-Rom chroma upsampling. CAPS now beats JPEG and JPEG 2000 at every
-gate and WebP at .995; AVIF remains 1.47x/.26x/.12x smaller. See
-`harness_v4_final_quick_report.md` and its manifest (metric
+merged H/V/D band-4 chunks. CAPS now beats JPEG and JPEG 2000 at every
+gate and WebP at .995; AVIF remains 1.41x/1.25x/1.11x smaller. See
+`harness_v5_final_quick_report.md` and its manifest (metric
 `brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans
 remain required before product claims; cross-codec CPU timing is still
 diagnostic.

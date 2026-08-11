@@ -1,0 +1,78 @@
+{
+  "harness": "enterprise-eval-v3-windowed",
+  "metric_id": "brushie-box11-ms-ssim-v1",
+  "timestamp_utc": "2026-08-11T04:28:10.940998+00:00",
+  "command": [
+    "scripts/enterprise_eval.py",
+    "--quick",
+    "--output-prefix",
+    "harness_v5_final_quick"
+  ],
+  "git_sha": "a598e8e19e3e725f2e0f5c349d1c03889003ce4d",
+  "git_dirty": true,
+  "python": "3.9.6",
+  "platform": "macOS-26.5.1-arm64-arm-64bit",
+  "numpy": "2.0.2",
+  "pillow": "11.3.0",
+  "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "brushie_cli": "/Users/ace/projects/brushie/build/brushie",
+  "thresholds": [
+    0.97,
+    0.985,
+    0.995
+  ],
+  "preview_thresholds": [
+    0.95,
+    0.97
+  ],
+  "quick": true,
+  "kodak_limit": 2,
+  "div2k_limit": 0,
+  "candidate_count": 3323,
+  "samples": [
+    {
+      "profile": "chat_preview",
+      "sample": "chat_ui",
+      "category": "ui_text",
+      "source_width": 1200,
+      "source_height": 800,
+      "evaluated_width": 512,
+      "evaluated_height": 341
+    },
+    {
+      "profile": "chat_preview",
+      "sample": "kodak_01",
+      "category": "photo",
+      "source_width": 768,
+      "source_height": 512,
+      "evaluated_width": 512,
+      "evaluated_height": 341
+    },
+    {
+      "profile": "chat_preview",
+      "sample": "kodak_02",
+      "category": "photo",
+      "source_width": 768,
+      "source_height": 512,
+      "evaluated_width": 512,
+      "evaluated_height": 341
+    },
+    {
+      "profile": "chat_preview",
+      "sample": "meme_card",
+      "category": "ui_text",
+      "source_width": 1200,
+      "source_height": 800,
+      "evaluated_width": 512,
+      "evaluated_height": 341
+    }
+  ],
+  "codec_configs": {
+    "CAPS": "quality 1..100, base target 32/64, 8 threads, whole-band v2",
+    "JPEG": "Pillow quality 1..100; optimized; sequential/progressive; 4:2:0 and 4:4:4",
+    "WebP": "Pillow quality 1..100 method=6 exact=True plus lossless endpoint",
+    "AVIF": "ffmpeg libsvtav1 CRF 1..63; preset=4; avif=1:tune=0:lp=8; yuv420p",
+    "JPEG2000": "native ffmpeg jpeg2000; yuv420p+rgb24; whole-image tile; qscale sweep"
+  },
+  "timing_scope": "wall time including file I/O; process startup applies to CLI codecs"
+}

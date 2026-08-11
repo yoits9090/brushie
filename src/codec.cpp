@@ -1329,44 +1329,29 @@ static void downsample_2x(std::vector<std::int32_t>& plane, std::uint32_t w,
   plane.swap(out);
 }
 
-// Catmull-Rom cubic upsample of a half-resolution chroma plane to full
-// resolution (sharper than bilinear at equal coded bytes; decoder-side only).
+// Bilinear upsample of a half-resolution chroma plane to full resolution.
+// (A Catmull-Rom variant was measured and rejected: it rings on chroma edges
+// and loses windowed MS-SSIM at the .970 gate on photos.)
 static void upsample_plane(const std::vector<std::int32_t>& in, std::uint32_t w,
                            std::uint32_t h, std::uint32_t ow, std::uint32_t oh,
                            std::vector<std::int32_t>& out) {
   out.resize(static_cast<std::size_t>(ow) * oh);
-  auto tap = [&](std::int32_t x, std::int32_t y) -> double {
-    const std::int32_t xx = std::max<std::int32_t>(0, std::min<std::int32_t>(static_cast<std::int32_t>(w) - 1, x));
-    const std::int32_t yy = std::max<std::int32_t>(0, std::min<std::int32_t>(static_cast<std::int32_t>(h) - 1, y));
-    return in[static_cast<std::size_t>(yy) * w + static_cast<std::uint32_t>(xx)];
-  };
   for (std::uint32_t yy = 0; yy < oh; ++yy) {
     const double sy = h == 1 ? 0.0 : static_cast<double>(yy) * (h - 1) / (oh - 1);
-    const std::int32_t y0 = static_cast<std::int32_t>(sy);
+    const std::uint32_t y0 = static_cast<std::uint32_t>(sy);
+    const std::uint32_t y1 = std::min(h - 1, y0 + 1);
     const double fy = sy - y0;
-    const double wy[4] = {
-        -0.5 * fy * (1.0 - fy) * (1.0 - fy),
-        1.0 - 2.5 * fy * fy + 1.5 * fy * fy * fy,
-        0.5 * fy * (1.0 + 4.0 * fy - 3.0 * fy * fy),
-        -0.5 * fy * fy * (1.0 - fy)};
     for (std::uint32_t xx = 0; xx < ow; ++xx) {
       const double sx = w == 1 ? 0.0 : static_cast<double>(xx) * (w - 1) / (ow - 1);
-      const std::int32_t x0 = static_cast<std::int32_t>(sx);
+      const std::uint32_t x0 = static_cast<std::uint32_t>(sx);
+      const std::uint32_t x1 = std::min(w - 1, x0 + 1);
       const double fx = sx - x0;
-      const double wx[4] = {
-          -0.5 * fx * (1.0 - fx) * (1.0 - fx),
-          1.0 - 2.5 * fx * fx + 1.5 * fx * fx * fx,
-          0.5 * fx * (1.0 + 4.0 * fx - 3.0 * fx * fx),
-          -0.5 * fx * fx * (1.0 - fx)};
-      double acc = 0.0;
-      for (int j = 0; j < 4; ++j) {
-        double row = 0.0;
-        for (int i = 0; i < 4; ++i)
-          row += wx[i] * tap(x0 - 1 + i, y0 - 1 + j);
-        acc += wy[j] * row;
-      }
+      const double a = in[static_cast<std::size_t>(y0) * w + x0] * (1.0 - fx) +
+                       in[static_cast<std::size_t>(y0) * w + x1] * fx;
+      const double b = in[static_cast<std::size_t>(y1) * w + x0] * (1.0 - fx) +
+                       in[static_cast<std::size_t>(y1) * w + x1] * fx;
       out[static_cast<std::size_t>(yy) * ow + xx] =
-          static_cast<std::int32_t>(std::llround(acc));
+          static_cast<std::int32_t>(std::llround(a * (1.0 - fy) + b * fy));
     }
   }
 }
@@ -1958,10 +1943,65 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     nonzero += nz_list[i];
   }
 
+  // Merge each (layer, channel) H/V/D triple into one band-4 chunk: the
+  // level geometry derives the three band dims, so one 16-byte directory
+  // entry replaces three. The payload carries step_D, the per-band entropy
+  // modes, and the three self-contained band streams.
   std::vector<Chunk> ordered;
   ordered.reserve(refs.size());
-  for (std::size_t i = 0; i < refs.size(); ++i)
-    if (active[i]) ordered.push_back(std::move(chunks[i]));
+  for (std::size_t i = 0; i < refs.size(); ++i) {
+    if (!active[i]) continue;
+    const Chunk& c = chunks[i];
+    if (c.band == 1 && c.layer > 0) {
+      // find siblings V (band 2) and D (band 3) of the same layer+channel
+      const Chunk* v = nullptr;
+      const Chunk* d = nullptr;
+      for (std::size_t j = i + 1; j < refs.size(); ++j) {
+        if (!active[j]) continue;
+        const Chunk& cj = chunks[j];
+        if (cj.layer != c.layer || cj.channel != c.channel) break;
+        if (cj.band == 2) v = &cj;
+        if (cj.band == 3) d = &cj;
+        if (v && d) break;
+      }
+      if (v && d) {
+        Chunk m;
+        m.layer = c.layer;
+        m.band = 4;
+        m.channel = c.channel;
+        m.x = 0;
+        m.y = 0;
+        m.w = 0;
+        m.h = 0;
+        m.step = c.step;  // H/V step
+        m.mode = 4;
+        m.count = 0;
+        // payload = stepD(u16) + modeH + modeV + modeD + sizeH(u32) +
+        //           sizeV(u32) + H + V + D streams (D size = payload tail)
+        m.payload.resize(13, 0);
+        put_u16(m.payload, 0, d->step);
+        m.payload[2] = c.mode;
+        m.payload[3] = v->mode;
+        m.payload[4] = d->mode;
+        put_u32(m.payload, 5, static_cast<std::uint32_t>(c.payload.size()));
+        put_u32(m.payload, 9, static_cast<std::uint32_t>(v->payload.size()));
+        m.payload.reserve(13 + c.payload.size() + v->payload.size() + d->payload.size());
+        m.payload.insert(m.payload.end(), c.payload.begin(), c.payload.end());
+        m.payload.insert(m.payload.end(), v->payload.begin(), v->payload.end());
+        m.payload.insert(m.payload.end(), d->payload.begin(), d->payload.end());
+        m.checksum = 0;
+        ordered.push_back(std::move(m));
+        // mark V and D consumed
+        for (std::size_t j = i + 1; j < refs.size(); ++j)
+          if (active[j] && chunks[j].layer == c.layer && chunks[j].channel == c.channel &&
+              (chunks[j].band == 2 || chunks[j].band == 3))
+            active[j] = 0;
+        continue;
+      }
+    }
+    ordered.push_back(chunks[i]);
+  }
+
   if (ordered.size() > kMaxChunks) {
     fail(error, "too many coefficient chunks");
     return false;
@@ -2275,7 +2315,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     expected_payload_offset = offset + payload_size;
-    if (channel >= channels || band > 3 || mode < 3 || mode > 12 || step == 0 || tw == 0 || th == 0 ||
+    if (channel >= channels || band > 4 || mode < 3 || mode > 12 || step == 0 ||
+        ((tw == 0 || th == 0) && band != 4) || (band == 4 && (tw != 0 || th != 0)) ||
         count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
       return false;
@@ -2304,6 +2345,23 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       stride = b_w;
       band_w = b_w;
       band_h = b_h;
+    } else if (band == 4) {
+      // v5+ merged H/V/D triple: dims derive from the level geometry and the
+      // payload is stepD(u16) + modeH/V/D + sizeH(u32) + sizeV(u32) + H+V+D.
+      if (layer > shapes.size()) {
+        fail(error, "detail layer is invalid");
+        return false;
+      }
+      const std::uint32_t idx = static_cast<std::uint32_t>(shapes.size()) - layer;
+      BandLevel& lev = shapes[idx];
+      if (x != 0 || y != 0 || tw != 0 || th != 0) {
+        fail(error, "merged chunk bounds");
+        return false;
+      }
+      (void)band_w;
+      (void)band_h;
+      (void)destination;
+      (void)stride;
     } else {
       if (band == 0 || layer > shapes.size()) {
         fail(error, "detail layer is invalid");
@@ -2343,12 +2401,70 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     }
     {
       std::string derr;
-      if (!decode_band_arith(payload, payload_size, count, step, band == 0,
-                             destination, stride, tw, th, &derr, parent,
-                             parent_stride, version == kVersionBandV2, mode,
-                             version)) {
-        if (error) *error = derr;
-        return false;
+      if (band == 4) {
+        if (payload_size < 13) {
+          fail(error, "merged band payload too small");
+          return false;
+        }
+        const std::uint16_t step_d = get_u16(payload);
+        const std::uint8_t mode_h = payload[2];
+        const std::uint8_t mode_v = payload[3];
+        const std::uint8_t mode_d = payload[4];
+        const std::uint32_t size_h = get_u32(payload + 5);
+        const std::uint32_t size_v = get_u32(payload + 9);
+        if (mode_h < 3 || mode_h > 12 || mode_v < 3 || mode_v > 12 ||
+            mode_d < 3 || mode_d > 12 || step_d == 0) {
+          fail(error, "invalid merged band metadata");
+          return false;
+        }
+        const std::uint32_t off = 13;
+        if (static_cast<std::uint64_t>(off) + size_h + size_v > payload_size) {
+          fail(error, "merged band size accounting");
+          return false;
+        }
+        const std::uint32_t idx = static_cast<std::uint32_t>(shapes.size()) - layer;
+        BandLevel& lev = shapes[idx];
+        const std::uint32_t hw = lev.w / 2, lw = lev.lw, hh = lev.h / 2, lh = lev.lh;
+        const std::uint32_t dims[3][2] = {{hw, lh}, {lw, hh}, {hw, hh}};
+        const std::uint16_t steps[3] = {step, step, step_d};
+        const std::uint8_t modes[3] = {mode_h, mode_v, mode_d};
+        std::uint32_t cursor = off;
+        for (int bi = 0; bi < 3; ++bi) {
+          const std::uint32_t sec_size = bi < 2 ? (bi == 0 ? size_h : size_v)
+                                                : (payload_size - cursor);
+          if (cursor + sec_size > payload_size) {
+            fail(error, "merged band section overflow");
+            return false;
+          }
+          const std::int32_t* parent = nullptr;
+          std::uint32_t parent_stride = 0;
+          if (layer == 1) {
+            parent = base[channel].data();
+            parent_stride = (channel == 0 || channel == 3) ? base_w : ch_base_w;
+          } else {
+            BandLevel& pl = shapes[static_cast<std::size_t>(shapes.size()) -
+                                   (static_cast<std::size_t>(layer) - 1)];
+            parent = pl.detail[bi].data();
+            parent_stride = bi == 1 ? pl.lw : pl.w / 2;
+          }
+          if (!decode_band_arith(payload + cursor, sec_size,
+                                 dims[bi][0] * dims[bi][1], steps[bi], false,
+                                 lev.detail[bi].data(), dims[bi][0],
+                                 dims[bi][0], dims[bi][1], &derr, parent,
+                                 parent_stride, false, modes[bi], version)) {
+            if (error) *error = derr;
+            return false;
+          }
+          cursor += sec_size;
+        }
+      } else {
+        if (!decode_band_arith(payload, payload_size, count, step, band == 0,
+                               destination, stride, tw, th, &derr, parent,
+                               parent_stride, version == kVersionBandV2, mode,
+                               version)) {
+          if (error) *error = derr;
+          return false;
+        }
       }
     }
   }

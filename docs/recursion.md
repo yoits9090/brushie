@@ -15,6 +15,7 @@ the same numbers with per-jump annotations.
 | 3 | 003-rdo (rejected) | 9,711 | 17,285 | 36,082 | worse | closed-loop per-level step allocation with a metric-calibrated distortion proxy; the proxy cannot track windowed MS-SSIM, search disabled by default (kept behind BRUSHIE_RDO) |
 | 4 | 004-v5 | 9,292 | 16,406 | 35,693 | -0.9/-0.6/-0.3% | v5: 16-byte directory (per-chunk checksum dropped, 4B x chunks) |
 | 5 | 005-block-auto | 9,209 | 16,266 | 35,518 | -0.9/-0.9/-0.5% | per-band 16x16 block-significance mode (EBCOT-style) chosen automatically for block-sparse bands; helps synthetic content a lot (chat .970 2,897 -> 2,562; meme 2,080 -> 1,930), neutral-positive on photos |
+| 6 | 006-merge-bilin | 9,119 | 16,162 | 35,380 | -1.0/-0.6/-0.4% | H/V/D triples merged into one band-4 chunk (dims derived from level geometry; -32B directory per triple); Catmull-Rom chroma upsample measured and rejected (rings on chroma edges, loses the .970 gate on kodak_02) |
 
 Other experiments that lost and were reverted: decode-side damping (neutral),
 GAP base predictor (worse everywhere), 4:2:0 at q95+ (cannot hold the .995
@@ -27,8 +28,8 @@ Final v5 configuration: mode-8 detail entropy (local-k + parent significance
 context), base multiplier 0.4, per-band auto block mode (16x16, sparse
 threshold 50%), Catmull-Rom chroma upsampling on decode.
 
-Net (clean full harness, `harness_v4_final_quick_report.md`): **9,516 /
-16,311 / 35,534** mean bytes vs the audited v3 baseline 10,325 / 18,316 /
-38,174 = **-7.8% / -10.9% / -6.9%** at equal gates. CAPS beats JPEG and
-JPEG 2000 at every gate and WebP at .995; AVIF remains 1.47x / 1.26x / 1.12x
-smaller (block-adaptive intra prediction on synthetic content).
+Net (clean full harness, `harness_v5_final_quick_report.md`): **~9,100 /
+~16,200 / ~35,400** mean bytes vs the audited v3 baseline 10,325 / 18,316 /
+38,174 ≈ **-12% / -12% / -7%** at equal gates. CAPS beats JPEG and JPEG 2000
+at every gate and WebP at .995; AVIF remains ~1.4x / 1.25x / 1.1x smaller
+(block-adaptive intra prediction on synthetic content).
