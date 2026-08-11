@@ -111,7 +111,7 @@ int main() {
         return v;
       };
       const std::uint16_t version = u16(encoded.bytes.data() + 4);
-      const std::size_t entry_bytes = version >= 3 ? 20 : 40;
+      const std::size_t entry_bytes = version >= 5 ? 16 : (version >= 3 ? 20 : 40);
       const std::uint32_t chunks = u32(encoded.bytes.data() + 32);
       const std::size_t payload_start = static_cast<std::size_t>(u64(encoded.bytes.data() + 40));
       for (int layer = 0; layer <= static_cast<int>(encoded.stats.pyramid_levels); ++layer) {

@@ -1,4 +1,4 @@
-# CAPS stream format v3
+# CAPS stream format v5
 
 All integers are little-endian. A stream is self-contained and may be
 validated without allocating a decoded image. Implementations must reject
@@ -12,15 +12,22 @@ overflow, unknown version, and checksum failures.
 * v2 (legacy): whole-band context-adaptive arithmetic coding (mode 3),
   optional chroma 4:2:0, 40-byte directory, 14 unary + shared remainder
   contexts. Retained fixture coverage verifies decode compatibility.
-* v3 (current): compact 20-byte whole-band directory, cumulative/derived
-  offsets and counts, 24 unary + per-remainder-bit contexts, RGB/RGBA.
+* v3: compact 20-byte whole-band directory, cumulative/derived offsets and
+  counts, 24 unary + per-remainder-bit contexts, RGB/RGBA. Decoded for
+  compatibility.
+* v4: same directory; significance and sign contexts separated (the v3
+  layout overlapped them), local per-coefficient Rice parameters (mode 8).
+* v5 (current): 16-byte whole-band directory (per-payload checksum dropped);
+  detail bands additionally support per-band 16x16 block-significance mode
+  (mode 12) chosen automatically for sparse bands, and the base band may use
+  GAP prediction (mode 7) behind an opt-in flag.
 
 ## Header (64 bytes)
 
 | Offset | Size | Field |
 |---:|---:|---|
 | 0 | 4 | ASCII `CAPS` magic |
-| 4 | 2 | version = 3 |
+| 4 | 2 | version = 5 |
 | 6 | 2 | flags: bit 0 = chroma 4:2:0 subsampled; bits 1..15 reserved |
 | 8 | 4 | source width |
 | 12 | 4 | source height |
@@ -39,25 +46,25 @@ overflow, unknown version, and checksum failures.
 | 56 | 4 | FNV-1a checksum of header bytes 0..55 |
 | 60 | 4 | reserved |
 
-## Directory (20 bytes per chunk, v3)
+## Directory (16 bytes per chunk, v5)
 
 A chunk is one whole band of one channel at one progressive layer. Chunks and
 payloads are ordered coarse-to-fine and contiguous. Because whole bands start
-at (0,0), offsets are cumulative, and count is width*height, v3 omits those
-redundant fields while retaining a per-payload checksum.
+at (0,0), offsets are cumulative, and count is width*height, v5 omits those
+redundant fields and the per-payload checksum (v3/v4 retain the 4-byte
+checksum at entry offset 16 and a 20-byte entry size).
 
 | Offset | Size | Field |
 |---:|---:|---|
 | 0 | 1 | progressive layer (0 = base LL, max 16) |
 | 1 | 1 | band: 0=LL base, 1=horizontal, 2=vertical, 3=diagonal |
 | 2 | 1 | channel: 0=Y, 1=Co, 2=Cg, 3=alpha |
-| 3 | 1 | entropy mode (3) |
+| 3 | 1 | entropy mode: 3 = v3 layout, 4..6 = parent/class A/B variants, 7 = GAP base, 8 = local-k, 12 = block-significance |
 | 4 | 2 | band width |
 | 6 | 2 | band height |
 | 8 | 2 | scalar quantization step |
 | 10 | 2 | reserved |
 | 12 | 4 | payload bytes |
-| 16 | 4 | FNV-1a checksum of payload |
 
 Payload offset starts at header `payload_start` and advances by each entry's
 payload byte count. The coefficient count is band width*height. v1/v2 retain

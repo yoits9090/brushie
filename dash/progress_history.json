@@ -1,0 +1,79 @@
+[
+ {
+  "tag": "000-baseline",
+  "timestamp": "2026-08-10 17:32:35",
+  "gates": {
+   "0.970": 10325,
+   "0.985": 18316,
+   "0.995": 38173
+  },
+  "per_sample": {},
+  "notes": {
+   "_summary": "baseline: compact v3 whole-band arith coder, quant table tuned under harness v3"
+  }
+ },
+ {
+  "tag": "001-sign-sig-sep",
+  "timestamp": "2026-08-10 17:58:15",
+  "gates": {
+   "0.970": 9605,
+   "0.985": 17196,
+   "0.995": 36289
+  },
+  "per_sample": {},
+  "notes": {
+   "_summary": "v4 format: separated sign/sig contexts (old v3 overlapped them); -7.0/-6.1/-4.9% vs baseline at equal gates",
+   "0.970": "sign ctx overlap fixed",
+   "0.985": "sign ctx overlap fixed",
+   "0.995": "sign ctx overlap fixed"
+  }
+ },
+ {
+  "tag": "004-v5",
+  "timestamp": "2026-08-10 23:46:12",
+  "gates": {
+   "0.970": 9292,
+   "0.985": 16406,
+   "0.995": 35693
+  },
+  "per_sample": {},
+  "notes": {
+   "_summary": "v5 format: 16B directory (checksum dropped), local-k entropy, base mult 0.4; -10.0/-10.4/-6.5% vs baseline",
+   "0.970": "v5 + local-k",
+   "0.985": "v5 + local-k",
+   "0.995": "v5 + local-k"
+  }
+ },
+ {
+  "tag": "005-block-auto",
+  "timestamp": "2026-08-10 23:52:00",
+  "gates": {
+   "0.970": 9209,
+   "0.985": 16266,
+   "0.995": 35518
+  },
+  "per_sample": {},
+  "notes": {
+   "_summary": "v5 + per-band 16x16 block-flag mode (auto for sparse bands): -10.8/-11.2/-7.0% vs baseline",
+   "0.970": "block mode",
+   "0.985": "block mode",
+   "0.995": "block mode"
+  }
+ },
+ {
+  "tag": "FINAL-full-eval",
+  "timestamp": "2026-08-11 00:11:00",
+  "gates": {
+   "0.970": 9516,
+   "0.985": 16311,
+   "0.995": 35534
+  },
+  "per_sample": {},
+  "notes": {
+   "_summary": "full harness v5: beats JPEG+J2K at all gates, trails AVIF by 1.47x/1.26x/1.12x",
+   "0.970": "beats JPEG/J2K",
+   "0.985": "beats JPEG/J2K",
+   "0.995": "beats J2K/WebP"
+  }
+ }
+]

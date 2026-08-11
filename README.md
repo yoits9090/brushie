@@ -3,11 +3,12 @@
 Brushie CAPS (Compact Adaptive Pyramid Streams) is a deterministic CPU-only
 image codec. It uses a reversible YCoCg-R transform, a 5/3 lifting pyramid,
 midtread scalar quantization with frequency-ordered steps, and whole-band
-context-adaptive binary arithmetic coding. The current v3 stream uses a
-compact 20-byte whole-band directory while decoding legacy v1/v2 files.
-Bands are ordered coarse-to-fine
-for progressive decoding, and chroma is 4:2:0 subsampled at lossy operating
-points.
+context-adaptive binary arithmetic coding. The current v5 stream uses a
+compact 16-byte whole-band directory (v3/v4 20-byte and v1/v2 40-byte
+streams still decode). Detail bands use per-coefficient local Rice
+parameters plus an automatic per-band 16x16 block-significance mode for
+sparse bands. Bands are ordered coarse-to-fine for progressive decoding,
+and chroma is 4:2:0 subsampled at lossy operating points.
 
 Design notes and the competitive audit are in [literature_review.md](literature_review.md)
 and [design_candidates.md](design_candidates.md); the format is specified in
@@ -28,14 +29,18 @@ all codecs 4/4 coverage):
 | .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
 | .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-Post-audit tuning plus compact v3 cuts CAPS 9.0%/.970, 5.3%/.985, and
-51.0%/.995 versus the corrected baseline. CAPS beats JPEG 2000 at .985/.995
-and WebP at .995; it is within 1.8% of strong JPEG and 2.8% of J2K at .970,
-and remains 18-20% behind JPEG/AVIF at .995. See
-[docs/harness_v3.md](docs/harness_v3.md) and clean
-`harness_v3_brbr_v3_quick_manifest.json` (SHA `f8e2035`, metric
-`brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans remain
-required before product claims; cross-codec CPU timing is still diagnostic.
+The v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) cuts CAPS to
+**9,516 / 16,311 / 35,534** mean bytes at the same gates (clean exhaustive
+quick eval, 3,323 candidates, same metric and corpus) via: v4
+sign/significance context separation, per-coefficient local Rice
+parameters, a metric-calibrated base multiplier, per-band 16x16
+block-significance modes for sparse bands, a 16-byte v5 directory, and
+Catmull-Rom chroma upsampling. CAPS now beats JPEG and JPEG 2000 at every
+gate and WebP at .995; AVIF remains 1.47x/.26x/.12x smaller. See
+`harness_v4_final_quick_report.md` and its manifest (metric
+`brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans
+remain required before product claims; cross-codec CPU timing is still
+diagnostic.
 
 ## Build
 

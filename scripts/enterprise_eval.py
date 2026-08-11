@@ -140,7 +140,7 @@ def caps_prefix_bytes(path: Path) -> dict[int, int]:
     if len(data) < 64 or data[:4] != b"CAPS":
         raise ValueError(f"{path} is not a CAPS stream")
     version = struct.unpack_from("<H", data, 4)[0]
-    entry_bytes = 20 if version >= 3 else 40
+    entry_bytes = 16 if version >= 5 else (20 if version >= 3 else 40)
     levels = struct.unpack_from("<H", data, 16)[0]
     chunk_count = struct.unpack_from("<I", data, 32)[0]
     directory_bytes = struct.unpack_from("<I", data, 36)[0]
