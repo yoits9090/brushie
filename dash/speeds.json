@@ -1,0 +1,296 @@
+{
+  "results": [
+    {
+      "image": "4.1.01",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 11.269,
+      "decode_ms": 10.474,
+      "bytes": 8156
+    },
+    {
+      "image": "4.1.01",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 109.89,
+      "decode_ms": 9.294,
+      "bytes": 3927
+    },
+    {
+      "image": "4.1.01",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 1.926,
+      "decode_ms": 1.241,
+      "bytes": 9623
+    },
+    {
+      "image": "4.1.01",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 18.539,
+      "decode_ms": 1.638,
+      "bytes": 5940
+    },
+    {
+      "image": "4.1.01",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 28.395,
+      "decode_ms": 8.429,
+      "bytes": 2264
+    },
+    {
+      "image": "4.1.02",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 11.716,
+      "decode_ms": 10.287,
+      "bytes": 7655
+    },
+    {
+      "image": "4.1.02",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 126.532,
+      "decode_ms": 9.335,
+      "bytes": 3875
+    },
+    {
+      "image": "4.1.02",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 1.914,
+      "decode_ms": 1.186,
+      "bytes": 9731
+    },
+    {
+      "image": "4.1.02",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 18.883,
+      "decode_ms": 1.609,
+      "bytes": 5886
+    },
+    {
+      "image": "4.1.02",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 28.277,
+      "decode_ms": 8.708,
+      "bytes": 2258
+    },
+    {
+      "image": "4.2.01",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 26.916,
+      "decode_ms": 24.954,
+      "bytes": 9321
+    },
+    {
+      "image": "4.2.01",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 307.663,
+      "decode_ms": 14.684,
+      "bytes": 6470
+    },
+    {
+      "image": "4.2.01",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 5.983,
+      "decode_ms": 4.174,
+      "bytes": 30471
+    },
+    {
+      "image": "4.2.01",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 55.607,
+      "decode_ms": 5.409,
+      "bytes": 14076
+    },
+    {
+      "image": "4.2.01",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 88.395,
+      "decode_ms": 17.668,
+      "bytes": 6090
+    },
+    {
+      "image": "5.1.09",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 9.646,
+      "decode_ms": 9.915,
+      "bytes": 7645
+    },
+    {
+      "image": "5.1.09",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 119.814,
+      "decode_ms": 9.32,
+      "bytes": 4771
+    },
+    {
+      "image": "5.1.09",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 1.905,
+      "decode_ms": 1.196,
+      "bytes": 10746
+    },
+    {
+      "image": "5.1.09",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 27.911,
+      "decode_ms": 1.763,
+      "bytes": 8244
+    },
+    {
+      "image": "5.1.09",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 27.368,
+      "decode_ms": 7.587,
+      "bytes": 1515
+    },
+    {
+      "image": "7.1.08",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 27.193,
+      "decode_ms": 24.147,
+      "bytes": 7250
+    },
+    {
+      "image": "7.1.08",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 335.395,
+      "decode_ms": 15.218,
+      "bytes": 10218
+    },
+    {
+      "image": "7.1.08",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 6.668,
+      "decode_ms": 4.273,
+      "bytes": 31597
+    },
+    {
+      "image": "7.1.08",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 77.759,
+      "decode_ms": 5.763,
+      "bytes": 18650
+    },
+    {
+      "image": "7.1.08",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 84.732,
+      "decode_ms": 15.064,
+      "bytes": 3963
+    },
+    {
+      "image": "7.1.10",
+      "codec": "CAPS",
+      "setting": "q=41 base=64 threads=2",
+      "encode_ms": 24.789,
+      "decode_ms": 24.394,
+      "bytes": 9092
+    },
+    {
+      "image": "7.1.10",
+      "codec": "AVIF",
+      "setting": "crf=30 cpu-used=8 still-picture=1 yuv420p",
+      "encode_ms": 315.713,
+      "decode_ms": 14.825,
+      "bytes": 13335
+    },
+    {
+      "image": "7.1.10",
+      "codec": "JPEG",
+      "setting": "q=75 progressive optimize",
+      "encode_ms": 6.646,
+      "decode_ms": 4.005,
+      "bytes": 37873
+    },
+    {
+      "image": "7.1.10",
+      "codec": "WebP",
+      "setting": "q=75 method=6",
+      "encode_ms": 93.462,
+      "decode_ms": 6.348,
+      "bytes": 25748
+    },
+    {
+      "image": "7.1.10",
+      "codec": "JPEG2000",
+      "setting": "qscale=50 yuv420p",
+      "encode_ms": 119.942,
+      "decode_ms": 21.267,
+      "bytes": 4906
+    }
+  ],
+  "summary": {
+    "AVIF": {
+      "mean_encode_ms": 219.168,
+      "median_encode_ms": 217.097,
+      "mean_decode_ms": 12.113,
+      "median_decode_ms": 12.009,
+      "mean_total_ms": 231.281,
+      "median_total_ms": 229.107,
+      "mean_bytes": 7099.3,
+      "median_bytes": 5620.5
+    },
+    "CAPS": {
+      "mean_encode_ms": 18.588,
+      "median_encode_ms": 18.253,
+      "mean_decode_ms": 17.362,
+      "median_decode_ms": 17.31,
+      "mean_total_ms": 35.95,
+      "median_total_ms": 35.593,
+      "mean_bytes": 8186.5,
+      "median_bytes": 7905.5
+    },
+    "JPEG": {
+      "mean_encode_ms": 4.174,
+      "median_encode_ms": 3.954,
+      "mean_decode_ms": 2.679,
+      "median_decode_ms": 2.623,
+      "mean_total_ms": 6.853,
+      "median_total_ms": 6.662,
+      "mean_bytes": 21673.5,
+      "median_bytes": 20608.5
+    },
+    "JPEG2000": {
+      "mean_encode_ms": 62.852,
+      "median_encode_ms": 56.563,
+      "mean_decode_ms": 13.12,
+      "median_decode_ms": 11.886,
+      "mean_total_ms": 75.972,
+      "median_total_ms": 68.391,
+      "mean_bytes": 3499.3,
+      "median_bytes": 3113.5
+    },
+    "WebP": {
+      "mean_encode_ms": 48.694,
+      "median_encode_ms": 41.759,
+      "mean_decode_ms": 3.755,
+      "median_decode_ms": 3.586,
+      "mean_total_ms": 52.449,
+      "median_total_ms": 45.345,
+      "mean_bytes": 13090.7,
+      "median_bytes": 11160.0
+    }
+  }
+}

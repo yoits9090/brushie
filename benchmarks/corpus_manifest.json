@@ -1,0 +1,8 @@
+{
+ "total": 163,
+ "by_dataset": {
+  "kodak": 24,
+  "div2k": 100,
+  "usc_sipi": 39
+ }
+}

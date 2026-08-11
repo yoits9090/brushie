@@ -31,14 +31,25 @@ def load_history():
         return []
     return json.loads(HISTORY.read_text())
 
+def load_broad():
+    p = ROOT / "dash" / "broad.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
+
 def render():
     history = load_history()
     if not history:
         return None
-    fig = plt.figure(figsize=(17, 10))
-    gs = fig.add_gridspec(2, 1, height_ratios=[2.1, 1.0], hspace=0.32)
+    broad = load_broad()
+    fig = plt.figure(figsize=(17, 13 if broad else 10))
+    if broad:
+        gs = fig.add_gridspec(3, 1, height_ratios=[1.7, 1.0, 0.9], hspace=0.42)
+    else:
+        gs = fig.add_gridspec(2, 1, height_ratios=[2.1, 1.0], hspace=0.32)
     ax = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1])
+    ax3 = fig.add_subplot(gs[2]) if broad else None
 
     colors = {0.970: "#1f77b4", 0.985: "#ff7f0e", 0.995: "#d62728"}
     xs = list(range(len(history)))
@@ -93,6 +104,35 @@ def render():
     ax2.legend(loc="upper left", fontsize=8, ncol=5)
     ax2.grid(True, which="both", alpha=0.25)
     ax2.set_title("Current iteration vs competitors (lower is better)", fontsize=11)
+
+    if broad is not None and ax3 is not None:
+        gates = broad.get("gates", {})
+        xs = np.arange(len(gates))
+        width = 0.14
+        codecs = ["AVIF", "WebP", "JPEG", "JPEG2000", "CAPS"]
+        colors = {"AVIF": "#1f77b4", "WebP": "#ff7f0e", "JPEG": "#2ca02c",
+                  "JPEG2000": "#d62728", "CAPS": "#9467bd"}
+        for j, codec in enumerate(codecs):
+            vals = []
+            for g in gates.values():
+                entry = g.get(codec)
+                vals.append(entry["mean_bytes"] if entry else 0)
+            ax3.bar(xs + (j - 2) * width, vals, width, label=codec,
+                    color=colors[codec], alpha=0.85)
+        for i, g in enumerate(gates):
+            ax3.text(i, 5000, f"gate {g}", ha="center", fontsize=8, fontweight="bold")
+        ax3.set_yscale("log")
+        ax3.set_ylabel("mean bytes (log)")
+        ax3.set_xticks(xs)
+        ax3.set_xticklabels([f"{broad.get('samples', 0)} imgs"] + [""] * (len(gates) - 1))
+        ax3.legend(loc="upper left", fontsize=8, ncol=5)
+        ax3.grid(True, which="both", alpha=0.25)
+        title = f"BROAD CORPUS ({broad.get('samples', 0)} public-benchmark images, cached competitors)"
+        speeds = broad.get("speeds", {})
+        if speeds:
+            sp = speeds.get("CAPS", {})
+            title += f" | CAPS enc {sp.get('encode_ms', '?')}ms / dec {sp.get('decode_ms', '?')}ms"
+        ax3.set_title(title, fontsize=11)
 
     out = ROOT / "dash" / "progress.png"
     fig.savefig(out, dpi=110, bbox_inches="tight")

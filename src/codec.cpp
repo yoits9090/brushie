@@ -782,12 +782,23 @@ static unsigned mag_class(std::int32_t v) {
   const std::uint32_t a = static_cast<std::uint32_t>(v < 0 ? -v : v);
   return a == 0 ? 0u : (a == 1 ? 1u : (a <= 3 ? 2u : 3u));
 }
+static std::int32_t parent_at(const std::int32_t* parent,
+                               std::uint32_t stride, std::uint32_t pw,
+                               std::uint32_t ph, std::uint32_t x,
+                               std::uint32_t y) {
+  if (!parent || pw == 0 || ph == 0) return 0;
+  const std::uint32_t px = std::min(x / 2, pw - 1);
+  const std::uint32_t py = std::min(y / 2, ph - 1);
+  return parent[static_cast<std::size_t>(py) * stride + px];
+}
+
 static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                               std::uint32_t h, bool use_prediction,
                               std::uint64_t nonzero,
                               std::uint64_t abs_sum,
                               const std::int32_t* parent,
                               std::uint32_t parent_stride,
+                              std::uint32_t parent_w, std::uint32_t parent_h,
                               std::uint8_t mode,
                               std::vector<std::uint8_t>& out) {
   int k0 = 0;
@@ -841,8 +852,8 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
               const std::int32_t p = (y == 0) ? a : (x == 0 ? b : median_predict(a, b, c));
               q -= p;
             }
-            const std::int32_t pv = use_parent
-                ? parent[static_cast<std::size_t>(y / 2) * parent_stride + x / 2] : 0;
+            const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
+                                                parent_h, x, y);
             const unsigned ctx = sig_idx(4, mode, sig_context(band, w, x, y), use_parent && pv != 0);
             const std::uint32_t s = (q != 0) ? 1u : 0u;
             enc.encode_bit(probs.p[ctx], s);
@@ -896,8 +907,8 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                                                  (x > 0 && y > 0) ? band[static_cast<std::size_t>(y - 1) * w + x - 1] : 0);
         q -= p;
       }
-      const std::int32_t pv = use_parent
-          ? parent[static_cast<std::size_t>(y / 2) * parent_stride + x / 2] : 0;
+      const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
+                                          parent_h, x, y);
       const unsigned ctx = sig_context(band, w, x, y);
       std::uint32_t s;
       if (mode == 11 && use_parent) {
@@ -993,6 +1004,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
                               std::uint32_t th, std::string* error,
                               const std::int32_t* parent = nullptr,
                               std::uint32_t parent_stride = 0,
+                              std::uint32_t parent_w = 0,
+                              std::uint32_t parent_h = 0,
                               bool v2_entropy_layout = false,
                               std::uint8_t mode = 3,
                               std::uint16_t version = 4) {
@@ -1035,8 +1048,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         for (std::uint32_t yy = by * kB; yy < std::min(th, (by + 1) * kB); ++yy) {
           for (std::uint32_t xx = bx * kB; xx < std::min(tw, (bx + 1) * kB); ++xx) {
             const std::uint32_t x = xx, y = yy;
-            const std::int32_t pv = use_parent
-                ? parent[static_cast<std::size_t>(y / 2) * parent_stride + x / 2] : 0;
+            const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
+                                                parent_h, x, y);
             const unsigned raw_ctx = sig_context(dest, stride, x, y);
             const std::uint32_t s = dec.decode_bit(
                 probs.p[sig_idx(version, mode, raw_ctx, use_parent && pv != 0)]);
@@ -1119,8 +1132,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
   }
   for (std::uint32_t y = 0; y < th; ++y) {
     for (std::uint32_t x = 0; x < tw; ++x) {
-      const std::int32_t pv = use_parent
-          ? parent[static_cast<std::size_t>(y / 2) * parent_stride + x / 2] : 0;
+      const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
+                                          parent_h, x, y);
       const unsigned raw_ctx = sig_context(dest, stride, x, y);
       std::uint32_t s;
       if (mode == 11 && use_parent) {
@@ -1425,7 +1438,7 @@ static bool test_encode_band(const std::int32_t* band, std::uint32_t w,
   quantize_band(tmp, step, nonzero, abs_sum);
   if (nonzero == 0) return false;
   encode_band_arith(tmp.data(), w, h, use_prediction, nonzero, abs_sum,
-                     nullptr, 0, 3, out);
+                     nullptr, 0, 0, 0, 3, out);
   return true;
 }
 static bool test_decode_band(const std::uint8_t* data, std::size_t size,
@@ -1435,7 +1448,7 @@ static bool test_decode_band(const std::uint8_t* data, std::size_t size,
                              std::uint32_t th) {
   (void)0;
   return decode_band_arith(data, size, count, step, use_prediction, dest,
-                           stride, tw, th, nullptr, nullptr, 0, false, 3);
+                           stride, tw, th, nullptr, 0, 0, 0, false, 3);
 }
 static std::int64_t floor_div_for_test(std::int64_t a, std::int64_t b) {
   return floor_div(a, b);
@@ -1634,6 +1647,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     std::vector<std::uint8_t> payload;
     encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
                       as_list[i], parent, parent_stride,
+                      r.layer > 0 ? refs[parent_of(i)].w : 0,
+                      r.layer > 0 ? refs[parent_of(i)].h : 0,
                       r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode, payload);
     band_bytes[i] = payload.size();
     band_active[i] = 1;
@@ -1814,6 +1829,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
             std::vector<std::uint8_t> payload;
             encode_band_arith(cand_quant[ri].data(), r.w, r.h, r.predict, nz, as,
                               parent, parent_stride,
+                              r.layer > 0 ? refs[parent_of(ri)].w : 0,
+                              r.layer > 0 ? refs[parent_of(ri)].h : 0,
                               r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode,
                               payload);
             cand_bytes[ri] = payload.size();
@@ -1937,7 +1954,9 @@ bool encode(const ImageView& image, const EncodeOptions& options,
       parent_stride = refs[pi].w;
     }
     encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
-                      as_list[i], parent, parent_stride, c.mode, payload);
+                      as_list[i], parent, parent_stride,
+                      r.layer > 0 ? refs[parent_of(i)].w : 0,
+                      r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode, payload);
     c.payload = std::move(payload);
     active[i] = 1;
     nonzero += nz_list[i];
@@ -1947,12 +1966,16 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   // level geometry derives the three band dims, so one 16-byte directory
   // entry replaces three. The payload carries step_D, the per-band entropy
   // modes, and the three self-contained band streams.
+  static const bool no_merge = []() {
+    const char* e = std::getenv("BRUSHIE_NOMERGE");
+    return e && std::atoi(e) == 1;
+  }();
   std::vector<Chunk> ordered;
   ordered.reserve(refs.size());
   for (std::size_t i = 0; i < refs.size(); ++i) {
     if (!active[i]) continue;
     const Chunk& c = chunks[i];
-    if (c.band == 1 && c.layer > 0) {
+    if (!no_merge && c.band == 1 && c.layer > 0) {
       // find siblings V (band 2) and D (band 3) of the same layer+channel
       const Chunk* v = nullptr;
       const Chunk* d = nullptr;
@@ -2387,16 +2410,20 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     const std::int32_t* parent = nullptr;
-    std::uint32_t parent_stride = 0;
+    std::uint32_t parent_stride = 0, parent_w = 0, parent_h = 0;
     if (mode != 3 && layer > 0) {
       if (layer == 1) {
         parent = base[channel].data();
         parent_stride = (channel == 0 || channel == 3) ? base_w : ch_base_w;
+        parent_w = parent_stride;
+        parent_h = (channel == 0 || channel == 3) ? base_h : ch_base_h;
       } else {
         BandLevel& pl = shapes[static_cast<std::size_t>(shapes.size()) -
                                (static_cast<std::size_t>(layer) - 1)];
         parent = pl.detail[band - 1].data();
         parent_stride = band == 1 ? pl.w / 2 : (band == 2 ? pl.lw : pl.w / 2);
+        parent_w = parent_stride;
+        parent_h = band == 1 ? pl.lh : (band == 2 ? pl.h / 2 : pl.h / 2);
       }
     }
     {
@@ -2437,22 +2464,30 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
             return false;
           }
           const std::int32_t* parent = nullptr;
-          std::uint32_t parent_stride = 0;
+          std::uint32_t parent_stride = 0, parent_w = 0, parent_h = 0;
           if (layer == 1) {
             parent = base[channel].data();
             parent_stride = (channel == 0 || channel == 3) ? base_w : ch_base_w;
+            parent_w = parent_stride;
+            parent_h = (channel == 0 || channel == 3) ? base_h : ch_base_h;
           } else {
             BandLevel& pl = shapes[static_cast<std::size_t>(shapes.size()) -
                                    (static_cast<std::size_t>(layer) - 1)];
             parent = pl.detail[bi].data();
             parent_stride = bi == 1 ? pl.lw : pl.w / 2;
+            parent_w = parent_stride;
+            parent_h = bi == 0 ? pl.lh : (bi == 1 ? pl.h / 2 : pl.h / 2);
           }
           if (!decode_band_arith(payload + cursor, sec_size,
                                  dims[bi][0] * dims[bi][1], steps[bi], false,
                                  lev.detail[bi].data(), dims[bi][0],
                                  dims[bi][0], dims[bi][1], &derr, parent,
-                                 parent_stride, false, modes[bi], version)) {
-            if (error) *error = derr;
+                                 parent_stride, parent_w, parent_h, false,
+                                 modes[bi], version)) {
+            if (error) *error = "merged(l=" + std::to_string(layer) + ",c=" +
+                                 std::to_string(channel) + ",bi=" + std::to_string(bi) +
+                                 ",w=" + std::to_string(dims[bi][0]) + ",h=" +
+                                 std::to_string(dims[bi][1]) + "): " + derr;
             return false;
           }
           cursor += sec_size;
@@ -2460,9 +2495,12 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       } else {
         if (!decode_band_arith(payload, payload_size, count, step, band == 0,
                                destination, stride, tw, th, &derr, parent,
-                               parent_stride, version == kVersionBandV2, mode,
-                               version)) {
-          if (error) *error = derr;
+                               parent_stride, parent_w, parent_h,
+                               version == kVersionBandV2, mode, version)) {
+          if (error) *error = "chunk(l=" + std::to_string(layer) + ",b=" +
+                               std::to_string(band) + ",c=" + std::to_string(channel) +
+                               ",tw=" + std::to_string(tw) + ",th=" + std::to_string(th) +
+                               ",sz=" + std::to_string(payload_size) + "): " + derr;
           return false;
         }
       }

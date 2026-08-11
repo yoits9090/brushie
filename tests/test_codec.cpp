@@ -8,7 +8,8 @@
 #include <vector>
 
 int main() {
-  for (const auto dims : {std::pair<unsigned, unsigned>{1, 1}, {17, 19}, {65, 73}, {256, 192}, {512, 512}}) {
+  for (const auto dims : {std::pair<unsigned, unsigned>{1, 1}, {17, 19}, {65, 73},
+                          {256, 192}, {512, 512}, {512, 386}, {512, 342}, {512, 193}}) {
     const unsigned w = dims.first, h = dims.second;
     std::vector<std::uint8_t> src(static_cast<std::size_t>(w) * h * 3);
     for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {

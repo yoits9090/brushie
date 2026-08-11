@@ -1,0 +1,27 @@
+{
+  "status": "superseded by local re-run",
+  "updated_at": "2026-08-11 01:50:23",
+  "summary": "Node CAPS runs completed but results are INVALID (codec bug: odd-dimension decode failures on x86-64 Linux; ASAN heap-buffer-overflow in encode_band_arith line 900; encode/decode parent-band OOB read diverges between processes). Parent instructed to stop node runs and supersede with local re-run. Partial CSVs preserved in benchmarks/caps_nodes/.",
+  "shards_done": [
+    "kodak (INVALID: 0 rows)",
+    "div2k_a (INVALID: 5/50 samples)",
+    "div2k_b (INVALID: 5/50 samples)"
+  ],
+  "errors": [
+    "bench-node-4 creation failed 3x: TooManyAssignmentsError (session limit); reused bench-node-1 for div2k_b",
+    "codec build on nodes (gcc 11.4 x86-64) produces bitstreams that fail decode for most images: 'arithmetic band payload size mismatch'; root cause heap-buffer-overflow at codec.cpp:900 (parent[] OOB read in encode_band_arith), deterministic on x86-64, absent on arm64 macOS build",
+    "bench-node-1 /content/results_caps*.csv vanished (VM idle/recycled); restored from earlier downloads",
+    "bench-node-2 kodak run: 0 matched rows; div2k nodes: 5 samples each (15 rows)"
+  ],
+  "nodes": {
+    "bench-node-1": "done (div2k_b caps run, invalid results) - session IDLE",
+    "bench-node-2": "done (kodak caps run, invalid results - 0 rows)",
+    "bench-node-3": "done (div2k_a caps run, invalid results)",
+    "bench-node-4": "creation failed (TooManyAssignmentsError) - never provisioned"
+  },
+  "artifacts": "benchmarks/caps_nodes/caps_{kodak,div2k_a,div2k_b}[,_aggregate,_speeds].csv",
+  "diagnostics": {
+    "root_cause": "codec.cpp:900 parent[static_cast<size_t>(y/2)*parent_stride + x/2] OOB read in encode_band_arith (and mirrors at lines 845/1039/1123); ASAN-verified on node; recommended fix: clamp parent index to parent_w/parent_h in all 4 sites",
+    "local_sanity": "arm64 local binary round-trips all tested images incl. kodak 01 q=100 base=32"
+  }
+}

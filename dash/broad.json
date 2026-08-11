@@ -1,0 +1,98 @@
+{
+ "gates": {
+  "0.970": {
+   "AVIF": {
+    "mean_bytes": 9397,
+    "n": 163
+   },
+   "WebP": {
+    "mean_bytes": 11145,
+    "n": 163
+   },
+   "JPEG": {
+    "mean_bytes": 15091,
+    "n": 163
+   },
+   "JPEG2000": {
+    "mean_bytes": 12744,
+    "n": 163
+   },
+   "CAPS": {
+    "mean_bytes": 11713,
+    "n": 163
+   }
+  },
+  "0.985": {
+   "AVIF": {
+    "mean_bytes": 18640,
+    "n": 163
+   },
+   "WebP": {
+    "mean_bytes": 20260,
+    "n": 161
+   },
+   "JPEG": {
+    "mean_bytes": 26912,
+    "n": 163
+   },
+   "JPEG2000": {
+    "mean_bytes": 23960,
+    "n": 163
+   },
+   "CAPS": {
+    "mean_bytes": 22030,
+    "n": 163
+   }
+  },
+  "0.995": {
+   "AVIF": {
+    "mean_bytes": 43613,
+    "n": 153
+   },
+   "WebP": {
+    "mean_bytes": 43168,
+    "n": 144
+   },
+   "JPEG": {
+    "mean_bytes": 53563,
+    "n": 148
+   },
+   "JPEG2000": {
+    "mean_bytes": 57501,
+    "n": 163
+   },
+   "CAPS": {
+    "mean_bytes": 57515,
+    "n": 163
+   }
+  }
+ },
+ "samples": 163,
+ "speeds": {
+  "JPEG": {
+   "encode_ms": 2.6,
+   "decode_ms": 1.5,
+   "n": 16774
+  },
+  "WebP": {
+   "encode_ms": 33.4,
+   "decode_ms": 2.7,
+   "n": 8618
+  },
+  "AVIF": {
+   "encode_ms": 112.1,
+   "decode_ms": 41.2,
+   "n": 5695
+  },
+  "JPEG2000": {
+   "encode_ms": 91.3,
+   "decode_ms": 46.1,
+   "n": 11542
+  },
+  "CAPS": {
+   "encode_ms": 21.9,
+   "decode_ms": 20.1,
+   "n": 489
+  }
+ }
+}
