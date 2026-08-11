@@ -321,11 +321,11 @@ def main():
 # ---------------------------------------------------------------------------
 PROFILES = {
     "base":   "",
-    "coarse_hi": "6,1.45,0.8,1.8,1.2,2.5,2.0,0.5",   # protect coarse levels
-    "coarse_lo": "6,1.05,0.8,1.8,1.2,2.5,2.0,0.3",   # protect base, fine coarse
     "chroma_hi": "6,1.25,0.8,1.8,1.2,2.8,2.0,0.4",   # crush low-q chroma
     "diag_hi":   "6,1.25,0.8,2.2,1.2,2.5,2.0,0.4",   # crush diagonals
     "fine_lo":   "6,1.25,0.8,1.8,1.2,2.5,2.0,0.6",   # finer base
+    "lvl_fine_off":  "lF:1.41",                       # coarsen finest detail
+    "lvl_fine_off2": "lF:2.0",
 }
 
 def _caps_one(ppm_path, q, base, threads, profile):
@@ -349,22 +349,35 @@ def _caps_one(ppm_path, q, base, threads, profile):
                 ms_ssim=m.ms_ssim_windowed, psnr=m.psnr, ssim=m.ssim_windowed,
                 bpp=sz*8/(w*h))
 
+PROFILE_Q_SEARCH = (0, 2, 4)  # try q_gate + delta for each profile
+
 def _worker_profile(args):
     # args = (src_path, gate, q, base)
     src, gate, q, base = args
     tmp, ppm, _w, _h, _orig, _ = to_ppm(src)
     threads = os.environ.get("BRUSHIE_BENCH_THREADS", "8")
     best = None
-    for name, params in PROFILES.items():
-        old = os.environ.get("BRUSHIE_QPARAMS")
-        os.environ["BRUSHIE_QPARAMS"] = params
+    for name, spec in PROFILES.items():
+        qp = ""; lvl = ""
+        if spec.startswith("l"):
+            lvl = spec
+        else:
+            qp = spec
+        old_qp = os.environ.get("BRUSHIE_QPARAMS")
+        old_lvl = os.environ.get("BRUSHIE_LEVELMUL")
+        os.environ["BRUSHIE_QPARAMS"] = qp
+        os.environ["BRUSHIE_LEVELMUL"] = lvl
         try:
-            r = _caps_one(ppm, q, base, threads, name)
+            for dq in PROFILE_Q_SEARCH:
+                qq = min(100, q + dq)
+                r = _caps_one(ppm, qq, base, threads, name + f"+{dq}")
+                if float(r["ms_ssim"]) >= gate and (best is None or r["bytes"] < best["bytes"]):
+                    best = r
         finally:
-            if old is None: os.environ.pop("BRUSHIE_QPARAMS", None)
-            else: os.environ["BRUSHIE_QPARAMS"] = old
-        if float(r["ms_ssim"]) >= gate and (best is None or r["bytes"] < best["bytes"]):
-            best = r
+            if old_qp is None: os.environ.pop("BRUSHIE_QPARAMS", None)
+            else: os.environ["BRUSHIE_QPARAMS"] = old_qp
+            if old_lvl is None: os.environ.pop("BRUSHIE_LEVELMUL", None)
+            else: os.environ["BRUSHIE_LEVELMUL"] = old_lvl
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
     return (src, gate, best)

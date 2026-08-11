@@ -682,6 +682,33 @@ static void quant_params(double& root_div, double& exp_lo, double& exp_hi,
   if (n >= 7 && v[6] > 0) chroma_hi = v[6];
   if (n >= 8 && v[7] > 0) base_mul = v[7];
 }
+// BRUSHIE_LEVELMUL="l1:0.8,l2:1.2,...": per-layer multipliers for the
+// coarsest (l1) onward detail levels, applied on top of the quant table
+// (harness-level per-image allocation search hook).
+static double level_multiplier(std::uint32_t layer_from_coarsest,
+                               std::uint32_t num_levels) {
+  const char* e = std::getenv("BRUSHIE_LEVELMUL");
+  if (!e) return 1.0;
+  const char* p = e;
+  while (*p) {
+    if (p[0] == 'l') {
+      const int idx = (p[1] == 'F' || p[1] == 'f')
+                          ? static_cast<int>(num_levels)
+                          : std::atoi(p + 1);
+      while (*p && *p != ':') ++p;
+      if (*p == ':') ++p;
+      const double v = std::atof(p);
+      if (idx >= 1 && idx == static_cast<int>(layer_from_coarsest)) return v;
+      while (*p && *p != ',') ++p;
+      if (*p == ',') ++p;
+    } else {
+      while (*p && *p != ',') ++p;
+      if (*p == ',') ++p;
+    }
+  }
+  return 1.0;
+}
+
 static std::uint16_t quant_step(std::uint8_t quality,
                                 std::uint32_t level_from_finest,
                                 std::uint32_t num_levels, std::uint8_t band,
@@ -711,6 +738,7 @@ static std::uint16_t quant_step(std::uint8_t quality,
   // lossless tier. Alpha (channel 3) follows luma, never chroma weighting.
   if (band == 3) step *= quality < 95 ? diag_lo : diag_hi;
   if (channel == 1 || channel == 2) step *= quality < 95 ? chroma_lo : chroma_hi;
+  step *= level_multiplier(num_levels - level_from_finest, num_levels);
   return static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
 }

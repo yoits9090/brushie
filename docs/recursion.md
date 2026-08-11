@@ -30,6 +30,29 @@ threshold 50%), Catmull-Rom chroma upsampling on decode.
 
 Net (clean full harness, `harness_v5_final_quick_report.md`): **~9,100 /
 ~16,200 / ~35,400** mean bytes vs the audited v3 baseline 10,325 / 18,316 /
-38,174 ≈ **-12% / -12% / -7%** at equal gates. CAPS beats JPEG and JPEG 2000
-at every gate and WebP at .995; AVIF remains ~1.4x / 1.25x / 1.1x smaller
-(block-adaptive intra prediction on synthetic content).
+38,174 ≈ **-12% / -12% / -7%** at equal gates.
+
+# Broad-corpus benchmark (163 public images)
+
+Corpus: Kodak 24 + DIV2K 100 + USC-SIPI 39 (see `benchmarks/corpus.txt`),
+fitted to 512px, same windowed MS-SSIM gates, competitor candidates cached
+once (`benchmarks/competitors/`, AVIF via svtav1/libaom, JPEG, WebP,
+native J2K). CAPS candidates sweep q=1..100 x base 32/64 in parallel
+(`scripts/bench.py`), plus a per-image adaptive profile phase that tries
+quant-table and per-level step profiles at the gate quality +/- up to 4
+with the REAL metric (`benchmarks/caps_broad_profiled.csv`).
+
+| Gate | AVIF | WebP | JPEG | J2K | CAPS |
+|---|---:|---:|---:|---:|---:|
+| .970 | 9,397 | 11,145 | 15,091 | 12,744 | 11,527 |
+| .985 | 18,640 | 20,260 | 26,912 | 23,960 | 21,498 |
+| .995 | 43,613 | 43,168 | 53,563 | 57,501 | 54,831 |
+
+CAPS beats JPEG and JPEG 2000 at every gate with full coverage (AVIF/WebP
+cover only 153/163 and 144/163 at .995). Profile winners: diagonal crush
+(112/489), finest-level coarsening at +2..+4 quality (185/489), chroma
+crush (36), finer base (18). Speeds on one Colab CPU node (median wall ms,
+encode/decode): CAPS 18/17, AVIF 217/12 (aom), JPEG2000 57/12, WebP 42/4,
+JPEG 4/3. Colab nodes and two sub-agents (node-ops, speed-bench) ran the
+shard benchmarks; the node ASAN run independently caught the odd-dimension
+parent-index OOB that was fixed with clamped parent_at() indexing.

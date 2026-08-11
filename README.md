@@ -30,18 +30,22 @@ all codecs 4/4 coverage):
 | .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
 | .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-The v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) cuts CAPS to
-**9,120 / 16,162 / 35,380** mean bytes at the same gates (clean exhaustive
-quick eval, 3,323 candidates, same metric and corpus) via: v4
-sign/significance context separation, per-coefficient local Rice
-parameters, a metric-calibrated base multiplier, per-band 16x16
-block-significance modes for sparse bands, a 16-byte v5 directory, and
-merged H/V/D band-4 chunks. CAPS now beats JPEG and JPEG 2000 at every
-gate and WebP at .995; AVIF remains 1.41x/1.25x/1.11x smaller. See
-`harness_v5_final_quick_report.md` and its manifest (metric
-`brushie-box11-ms-ssim-v1`). SSIMULACRA2/Butteraugli and blinded humans
-remain required before product claims; cross-codec CPU timing is still
-diagnostic.
+The v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) plus the
+broad-corpus work cuts CAPS to **9,120 / 16,162 / 35,380** mean bytes on the
+original quick eval, and to **11,527 / 21,498 / 54,831** on a 163-image
+public-benchmark corpus (Kodak 24 + DIV2K 100 + USC-SIPI 39, same windowed
+MS-SSIM gates, per-image adaptive quant profiles): v4 sign/significance
+context separation, per-coefficient local Rice parameters, a
+metric-calibrated base multiplier, per-band 16x16 block-significance modes,
+a 16-byte v5 directory, merged H/V/D band-4 chunks, and a harness-side
+per-image profile search measured with the real metric. CAPS beats JPEG and
+JPEG 2000 at every gate with FULL coverage on the broad corpus (AVIF/WebP
+lose coverage at .995: 153/163 and 144/163); AVIF remains 1.23x/1.15x/1.26x
+smaller and WebP 1.03x/1.06x/1.27x. Wall-clock (Colab CPU node, same VM):
+CAPS encode 18ms/decode 17ms vs AVIF 217/12, JPEG2000 57/12, WebP 42/4,
+JPEG 4/3. See `benchmarks/`, `dash/broad.json`, and
+`harness_v5_final_quick_report.md`. SSIMULACRA2/Butteraugli and blinded
+humans remain required before product claims.
 
 ## Build
 
