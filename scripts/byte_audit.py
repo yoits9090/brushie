@@ -36,7 +36,8 @@ def audit(path: Path) -> list[dict]:
         raise ValueError(f"invalid directory accounting in {path}")
     by_group = defaultdict(lambda: {"chunks": 0, "directory_bytes": 0, "payload_bytes": 0,
                                     "coefficients": 0, "nonzero": 0, "symbols": Counter(),
-                                    "zero_runs": Counter(), "modes": Counter()})
+                                    "zero_runs": Counter(), "modes": Counter(),
+                                    "sec_h": 0, "sec_v": 0, "sec_d": 0})
     cumulative = payload_start
     for i in range(chunks):
         off = 64 + i * entry_bytes
@@ -55,8 +56,16 @@ def audit(path: Path) -> list[dict]:
         g["chunks"] += 1; g["directory_bytes"] += entry_bytes; g["payload_bytes"] += psize; g["coefficients"] += count
         g["modes"][mode] += 1
         pos = poff; end = poff + psize; decoded = 0
-        if mode == 3:
-            # v2 whole-band arithmetic payload: report sizes; symbol entropy
+        sec_h = sec_v = sec_d = 0
+        if band == 4 and mode >= 3 and psize >= 13:
+            # v5 merged H/V/D chunk: 13B header (stepD u16, modeH/V/D, sizeH u32,
+            # sizeV u32) then H, V, D sections; D size is the remainder.
+            sec_h = struct.unpack_from("<I", data, pos + 5)[0]
+            sec_v = struct.unpack_from("<I", data, pos + 9)[0]
+            sec_d = psize - 13 - sec_h - sec_v
+        g["sec_h"] += sec_h; g["sec_v"] += sec_v; g["sec_d"] += sec_d
+        if mode >= 3:
+            # v2+ whole-band arithmetic payload: report sizes; symbol entropy
             # analysis is not available for the range-coded stream.
             g["nonzero"] += count
             decoded = count
@@ -105,7 +114,9 @@ def audit(path: Path) -> list[dict]:
                      "mode2_chunks": g["modes"][2],
                      "nonzero_symbol_entropy_bits": entropy,
                      "entropy_lower_bound_bytes": math.ceil(total * entropy / 8),
-                     "actual_total_bytes": g["directory_bytes"] + g["payload_bytes"]})
+                     "actual_total_bytes": g["directory_bytes"] + g["payload_bytes"],
+                     "section_h_bytes": g["sec_h"], "section_v_bytes": g["sec_v"],
+                     "section_d_bytes": g["sec_d"]})
     return rows
 
 files = [ROOT / "examples/kodak01_512_q82.brbr"]  # legacy v1 example
