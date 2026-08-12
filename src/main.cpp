@@ -1,4 +1,5 @@
 #include "brushie/codec.h"
+#include "brushie/track.h"
 
 #include <chrono>
 #include <cstdio>
@@ -128,6 +129,19 @@ void usage() {
 
 }  // namespace
 
+static void dump_track() {
+  if (!brushie::track::enabled()) return;
+  const std::string dump = brushie::track::dump_jsonl();
+  const char* file = std::getenv("BRUSHIE_TRACK_FILE");
+  if (file && *file) {
+    std::ofstream tf(file, std::ios::app);
+    tf << dump;
+  } else {
+    std::ofstream tf("brushie_track.jsonl", std::ios::app);
+    tf << dump;
+  }
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) { usage(); return 2; }
   std::string error;
@@ -186,6 +200,7 @@ int main(int argc, char** argv) {
     if (options.target_bytes != 0) std::cout << " target_bytes=" << options.target_bytes;
     if (options.target_lpips > 0.0) std::cout << " target_lpips_unverified=" << options.target_lpips;
     std::cout << '\n';
+    dump_track();
     return out ? 0 : 1;
   }
   if (std::string(argv[1]) == "decode") {
@@ -210,6 +225,7 @@ int main(int argc, char** argv) {
     if (!written) written = write_ppm(argv[3], w, h, rgb, error);
     if (!written) { std::cerr << error << '\n'; return 1; }
     std::cout << "decode_ms=" << elapsed << " pixels=" << (w * static_cast<std::uint64_t>(h)) << '\n';
+    dump_track();
     return 0;
   }
   usage();

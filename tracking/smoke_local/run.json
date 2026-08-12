@@ -1,0 +1,18 @@
+{
+  "tag": "smoke_local",
+  "git_sha": "a22c9de",
+  "utc": "2026-08-12T18:12:21.701607+00:00",
+  "host": "aces-MacBook-Pro.local",
+  "platform": "macOS-26.5.1-arm64-arm-64bit",
+  "box": null,
+  "image": "bt.ppm",
+  "quality": 50,
+  "stream_bytes": 19010,
+  "bpp": 0.58013916015625,
+  "encode_ms_wall": 18.496,
+  "decode_ms_wall": 14.136,
+  "psnr_db": 23.099,
+  "encode_cli": "encode_ms=12.3617 bytes=19010 bpp=0.580139 levels=3 chunks=10 quality=50 tile=0 base=64x64",
+  "decode_cli": "decode_ms=9.10725 pixels=262144",
+  "stream_sha256": "633667734e71c1ef3cc3a653175959d56797887427c1ee75fd71e75ad805622e"
+}

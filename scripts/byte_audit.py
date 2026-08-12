@@ -26,7 +26,7 @@ def audit(path: Path) -> list[dict]:
     data = path.read_bytes()
     if data[:4] != b"CAPS": raise ValueError(path)
     version = struct.unpack_from("<H", data, 4)[0]
-    entry_bytes = 20 if version >= 3 else 40
+    entry_bytes = 16 if version >= 5 else (20 if version >= 3 else 40)
     levels = struct.unpack_from("<H", data, 16)[0]
     tile = struct.unpack_from("<H", data, 18)[0]
     chunks = struct.unpack_from("<I", data, 32)[0]

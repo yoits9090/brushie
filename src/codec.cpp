@@ -1,4 +1,5 @@
 #include "brushie/codec.h"
+#include "brushie/track.h"
 
 #include <algorithm>
 #include <array>
@@ -1525,19 +1526,26 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   const bool has_alpha = image.channels == 4;
 
   std::array<std::vector<std::int32_t>, 4> planes;
-  input_planes(image, planes, effective.threads);
+  {
+    BRUSHIE_TRACK_SCOPE("encode", "input_planes");
+    input_planes(image, planes, effective.threads);
+  }
   std::uint32_t cw = image.width, ch = image.height;
   if (subsample_chroma) {
+    BRUSHIE_TRACK_SCOPE("encode", "chroma_ds");
     downsample_2x(planes[1], image.width, image.height, cw, ch);
     downsample_2x(planes[2], image.width, image.height, cw, ch);
   }
 
   BandPyramid pyr0, pyr1, pyr2, pyr3;
-  build_band_pyramid(planes[0], image.width, image.height, effective.threads, effective.base_target, pyr0);
-  build_band_pyramid(planes[1], cw, ch, effective.threads, effective.base_target, pyr1);
-  build_band_pyramid(planes[2], cw, ch, effective.threads, effective.base_target, pyr2);
-  if (has_alpha)
-    build_band_pyramid(planes[3], image.width, image.height, effective.threads, effective.base_target, pyr3);
+  {
+    BRUSHIE_TRACK_SCOPE("encode", "pyramid");
+    build_band_pyramid(planes[0], image.width, image.height, effective.threads, effective.base_target, pyr0);
+    build_band_pyramid(planes[1], cw, ch, effective.threads, effective.base_target, pyr1);
+    build_band_pyramid(planes[2], cw, ch, effective.threads, effective.base_target, pyr2);
+    if (has_alpha)
+      build_band_pyramid(planes[3], image.width, image.height, effective.threads, effective.base_target, pyr3);
+  }
 
   // Collect one band reference per (layer, band, channel) in coarse-to-fine
   // order so that a decoder can stop after any progressive layer. v4 numbers
@@ -1664,6 +1672,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   for (std::size_t i = 0; i < refs.size(); ++i) chosen_step[i] = refs[i].step;
 
   auto encode_state = [&](std::size_t i) {
+    const auto track_t0 = std::chrono::steady_clock::now();
+    const std::uint64_t track_c0 = brushie::track::now_cycles();
     const BandRef& r = refs[i];
     const std::int32_t* parent = nullptr;
     std::uint32_t parent_stride = 0;
@@ -1680,6 +1690,26 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                       r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode, payload);
     band_bytes[i] = payload.size();
     band_active[i] = 1;
+    if (brushie::track::enabled()) {
+      const auto track_t1 = std::chrono::steady_clock::now();
+      const double track_ns =
+          std::chrono::duration<double, std::nano>(track_t1 - track_t0).count();
+      char track_kv[256];
+      std::snprintf(track_kv, sizeof(track_kv),
+                    "\"w\":%u,\"h\":%u,\"nz\":%llu,\"as\":%llu,\"step\":%u,"
+                    "\"mode\":%u,\"bytes\":%llu",
+                    r.w, r.h,
+                    static_cast<unsigned long long>(nz_list[i]),
+                    static_cast<unsigned long long>(as_list[i]),
+                    static_cast<unsigned>(r.step),
+                    static_cast<unsigned>(r.layer == 0 ? (use_gap ? 7 : 3)
+                                                        : detail_mode),
+                    static_cast<unsigned long long>(payload.size()));
+      brushie::track::emit("encode", "chunk", track_ns,
+                           brushie::track::now_cycles() - track_c0, r.layer,
+                           r.band, r.channel, payload.size(),
+                           std::string(track_kv));
+    }
     return payload;
   };
 
@@ -1756,9 +1786,12 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   }
 
   // Baseline: quantize + encode with the base table.
-  for (std::size_t i = 0; i < refs.size(); ++i) {
-    quantize_state(i);
-    if (band_active[i]) encode_state(i);
+  {
+    BRUSHIE_TRACK_SCOPE("encode", "quant_entropy");
+    for (std::size_t i = 0; i < refs.size(); ++i) {
+      quantize_state(i);
+      if (band_active[i]) encode_state(i);
+    }
   }
   const double d0 = total_distortion();
   const std::uint64_t b0 = total_bytes();
@@ -2064,6 +2097,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     fail(error, "encoded stream is too large");
     return false;
   }
+  BRUSHIE_TRACK_SCOPE("encode", "stream");
   output.bytes.assign(kHeaderBytes, 0);
   output.bytes[0] = 'C'; output.bytes[1] = 'A'; output.bytes[2] = 'P'; output.bytes[3] = 'S';
   put_u16(output.bytes, 4, kVersion);
@@ -2327,6 +2361,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
 
   const int highest_layer = max_progressive_layer < 0 ? static_cast<int>(levels) : max_progressive_layer;
   std::uint64_t expected_payload_offset = data_offset;
+  BRUSHIE_TRACK_SCOPE("decode", "entropy_all");
   for (std::uint32_t ci = 0; ci < chunk_count; ++ci) {
     const std::uint8_t* d = data + kHeaderBytes + static_cast<std::size_t>(ci) * directory_entry_bytes;
     std::uint16_t layer = 0, mode = 0, step = 0;
@@ -2455,6 +2490,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       }
     }
     {
+      const auto track_t0 = std::chrono::steady_clock::now();
+      const std::uint64_t track_c0 = brushie::track::now_cycles();
       std::string derr;
       if (band == 4) {
         if (payload_size < 13) {
@@ -2532,6 +2569,19 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
           return false;
         }
       }
+      if (brushie::track::enabled()) {
+        const auto track_t1 = std::chrono::steady_clock::now();
+        const double track_ns =
+            std::chrono::duration<double, std::nano>(track_t1 - track_t0).count();
+        char track_kv[192];
+        std::snprintf(track_kv, sizeof(track_kv),
+                      "\"bytes\":%llu,\"mode\":%u,\"band\":%u,\"channel\":%u",
+                      static_cast<unsigned long long>(payload_size),
+                      static_cast<unsigned>(mode), band, channel);
+        brushie::track::emit("decode", "chunk", track_ns,
+                             brushie::track::now_cycles() - track_c0, layer,
+                             band, channel, payload_size, std::string(track_kv));
+      }
     }
   }
 
@@ -2539,6 +2589,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
     fail(error, "trailing or missing CAPS payload bytes");
     return false;
   }
+  BRUSHIE_TRACK_SCOPE("decode", "synthesize");
   std::array<std::vector<std::int32_t>, 4> rec;
   rec[0] = std::move(base[0]);
   rec[1] = std::move(base[1]);
