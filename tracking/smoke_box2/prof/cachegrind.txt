@@ -1,0 +1,53 @@
+--------------------------------------------------------------------------------
+I1 cache:         32768 B, 64 B, 8-way associative
+D1 cache:         32768 B, 64 B, 8-way associative
+LL cache:         58720256 B, 64 B, 28-way associative
+Command:          /content/brushie/build/brushie encode /content/track/smoke_box2/in.ppm /content/prof/smoke_box2/out.brbr --quality 50
+Data file:        /content/prof/smoke_box2/cachegrind.out
+Events recorded:  Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw
+Events shown:     Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw
+Event sort order: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw
+Thresholds:       0.1 100 100 100 100 100 100 100 100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                   I1mr           ILmr           Dr                  D1mr             DLmr           Dw                  D1mw             DLmw             
+--------------------------------------------------------------------------------
+146,587,524 (100.0%) 4,811 (100.0%) 3,362 (100.0%) 31,507,182 (100.0%) 790,260 (100.0%) 8,085 (100.0%) 19,122,498 (100.0%) 798,799 (100.0%) 159,589 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  I1mr         ILmr         Dr                  D1mr             DLmr           Dw                 D1mw             DLmw              file:function
+--------------------------------------------------------------------------------
+63,594,347 (43.38%)  95 ( 1.97%)  95 ( 2.83%) 14,846,318 (47.12%)  58,471 ( 7.40%)     1 ( 0.01%) 3,381,677 (17.68%)     236 ( 0.03%)       0           ???:brushie::(anonymous namespace)::encode_band_arith(int const*, unsigned int, unsigned int, bool, unsigned long, unsigned long, int const*, unsigned int, unsigned int, unsigned int, unsigned char, std::vector<unsigned char, std::allocator<unsigned char> >&)
+24,654,312 (16.82%)  60 ( 1.25%)  10 ( 0.30%)  3,598,592 (11.42%)      35 ( 0.00%)     0            323,840 ( 1.69%)   1,828 ( 0.23%)       0           ???:brushie::(anonymous namespace)::forward_line(int const*, int*, unsigned int)
+10,722,074 ( 7.31%)   7 ( 0.15%)   7 ( 0.21%)  2,106,976 ( 6.69%)  12,292 ( 1.56%)     0          1,049,649 ( 5.49%)  65,541 ( 8.20%)       1 ( 0.00%)  ???:std::thread::_State_impl<std::thread::_Invoker<std::tuple<brushie::(anonymous namespace)::parallel_for<brushie::(anonymous namespace)::input_planes(brushie::ImageView const&, std::array<std::vector<int, std::allocator<int> >, 4ul>&, unsigned int)::$_17>(unsigned long, unsigned int, brushie::(anonymous namespace)::input_planes(brushie::ImageView const&, std::array<std::vector<int, std::allocator<int> >, 4ul>&, unsigned int)::$_17&&)::{lambda()#1}> > >::_M_run()
+ 9,277,056 ( 6.33%)   6 ( 0.12%)   5 ( 0.15%)  3,082,368 ( 9.78%) 509,830 (64.51%)     0          1,042,432 ( 5.45%) 509,529 (63.79%)       0           ???:brushie::(anonymous namespace)::build_band_pyramid(std::vector<int, std::allocator<int> >&, unsigned int, unsigned int, unsigned int, unsigned int, brushie::(anonymous namespace)::BandPyramid&)::$_21::operator()(unsigned long) const
+ 8,109,471 ( 5.53%)  12 ( 0.25%)   5 ( 0.15%)     13,657 ( 0.04%)      23 ( 0.00%)     0          7,805,325 (40.82%) 121,251 (15.18%) 110,900 (69.49%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms
+ 7,205,334 ( 4.92%)   3 ( 0.06%)   3 ( 0.09%)    393,216 ( 1.25%)       0              0                  0                0                0           ./math/../sysdeps/ieee754/dbl-64/s_llround.c:lround
+ 5,904,943 ( 4.03%)   9 ( 0.19%)   9 ( 0.27%)    525,344 ( 1.67%)  32,776 ( 4.15%)     0            131,114 ( 0.69%)   8,199 ( 1.03%)       0           ???:brushie::(anonymous namespace)::downsample_2x(std::vector<int, std::allocator<int> >&, unsigned int, unsigned int, unsigned int&, unsigned int&)
+ 5,160,550 ( 3.52%) 253 ( 5.26%) 250 ( 7.44%)    974,504 ( 3.09%)  34,607 ( 4.38%)     3 ( 0.04%)   789,411 ( 4.13%)     275 ( 0.03%)       9 ( 0.01%)  ???:brushie::encode(brushie::ImageView const&, brushie::EncodeOptions const&, brushie::EncodedImage&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)
+ 4,210,477 ( 2.87%)  46 ( 0.96%)  13 ( 0.39%)  3,475,656 (11.03%)  90,434 (11.44%)   129 ( 1.60%) 3,452,385 (18.05%)  60,247 ( 7.54%)  46,518 (29.15%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms
+ 1,517,273 ( 1.04%)  10 ( 0.21%)  10 ( 0.30%)    564,342 ( 1.79%)       2 ( 0.00%)     0            415,406 ( 2.17%)     597 ( 0.07%)       2 ( 0.00%)  ???:brushie::(anonymous namespace)::RangeEncoder::shift_low()
+ 1,004,794 ( 0.69%)  25 ( 0.52%)  11 ( 0.33%)    168,477 ( 0.53%)   2,095 ( 0.27%) 1,700 (21.03%)    54,241 ( 0.28%)      57 ( 0.01%)       9 ( 0.01%)  ./elf/./elf/dl-lookup.c:_dl_lookup_symbol_x
+   866,549 ( 0.59%)  45 ( 0.94%)  20 ( 0.59%)    263,951 ( 0.84%)   1,212 ( 0.15%)     0            122,770 ( 0.64%)     328 ( 0.04%)       0           ./malloc/./malloc/malloc.c:_int_free
+   590,341 ( 0.40%)  51 ( 1.06%)  35 ( 1.04%)    197,568 ( 0.63%)   4,434 ( 0.56%)   876 (10.83%)    82,471 ( 0.43%)     113 ( 0.01%)      46 ( 0.03%)  ./elf/./elf/dl-lookup.c:do_lookup_x
+   531,135 ( 0.36%) 141 ( 2.93%)  59 ( 1.75%)     84,063 ( 0.27%)     993 ( 0.13%)     0             86,247 ( 0.45%)   1,037 ( 0.13%)     113 ( 0.07%)  ./malloc/./malloc/malloc.c:_int_malloc
+   510,132 ( 0.35%)  20 ( 0.42%)   8 ( 0.24%)    132,213 ( 0.42%)   1,884 ( 0.24%)     1 ( 0.01%)    57,994 ( 0.30%)     101 ( 0.01%)       0           ./malloc/./malloc/malloc.c:malloc
+   483,514 ( 0.33%) 496 (10.31%) 344 (10.23%)    456,313 ( 1.45%)   1,954 ( 0.25%)    11 ( 0.14%)     1,183 ( 0.01%)     135 ( 0.02%)      27 ( 0.02%)  ???:???
+   374,283 ( 0.26%) 159 ( 3.30%)  73 ( 2.17%)    123,079 ( 0.39%)  25,481 ( 3.22%)     0             98,077 ( 0.51%)  23,884 ( 2.99%)       2 ( 0.00%)  ???:brushie::(anonymous namespace)::build_band_pyramid(std::vector<int, std::allocator<int> >&, unsigned int, unsigned int, unsigned int, unsigned int, brushie::(anonymous namespace)::BandPyramid&)
+   261,330 ( 0.18%)  23 ( 0.48%)  23 ( 0.68%)     65,350 ( 0.21%)   2,923 ( 0.37%) 2,454 (30.35%)    21,692 ( 0.11%)   1,661 ( 0.21%)     914 ( 0.57%)  ./elf/../sysdeps/x86_64/dl-machine.h:_dl_relocate_object
+   251,038 ( 0.17%)  11 ( 0.23%)   5 ( 0.15%)     90,521 ( 0.29%)   1,266 ( 0.16%)     0             44,271 ( 0.23%)     144 ( 0.02%)       0           ./malloc/./malloc/malloc.c:free
+   158,080 ( 0.11%)   6 ( 0.12%)   6 ( 0.18%)     33,280 ( 0.11%)       1 ( 0.00%)     0             29,952 ( 0.16%)      16 ( 0.00%)       2 ( 0.00%)  ???:brushie::(anonymous namespace)::build_band_pyramid(std::vector<int, std::allocator<int> >&, unsigned int, unsigned int, unsigned int, unsigned int, brushie::(anonymous namespace)::BandPyramid&)::$_20::operator()(unsigned long) const
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./elf/../sysdeps/x86_64/dl-machine.h
+  ./elf/./elf/dl-lookup.c
+  ./malloc/./malloc/malloc.c
+  ./math/../sysdeps/ieee754/dbl-64/s_llround.c
+  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S
+  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S
+

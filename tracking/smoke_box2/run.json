@@ -1,0 +1,14 @@
+{
+  "tag": "smoke_box2",
+  "git_sha": "a1d201b",
+  "utc": "2026-08-12T18:14:23.935504+00:00",
+  "host": "remote",
+  "platform": "colab-lab",
+  "box": "colab-lab",
+  "image": "bt.ppm",
+  "quality": 50,
+  "stream_bytes": 19010,
+  "bpp": 0.58013916015625,
+  "psnr_db": 23.099,
+  "stream_sha256": "633667734e71c1ef3cc3a653175959d56797887427c1ee75fd71e75ad805622e"
+}

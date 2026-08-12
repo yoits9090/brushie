@@ -1,0 +1,149 @@
+strace: Process 9483 attached
+strace: Process 9484 attached
+strace: Process 9485 attached
+strace: Process 9486 attached
+strace: Process 9487 attached
+strace: Process 9488 attached
+strace: Process 9489 attached
+strace: Process 9490 attached
+strace: Process 9491 attached
+strace: Process 9492 attached
+strace: Process 9493 attached
+strace: Process 9494 attached
+strace: Process 9495 attached
+strace: Process 9496 attached
+strace: Process 9497 attached
+strace: Process 9498 attached
+strace: Process 9499 attached
+strace: Process 9500 attached
+strace: Process 9501 attached
+strace: Process 9502 attached
+strace: Process 9503 attached
+strace: Process 9504 attached
+strace: Process 9505 attached
+strace: Process 9506 attached
+strace: Process 9507 attached
+strace: Process 9508 attached
+strace: Process 9509 attached
+strace: Process 9510 attached
+strace: Process 9511 attached
+strace: Process 9512 attached
+strace: Process 9513 attached
+strace: Process 9514 attached
+strace: Process 9515 attached
+strace: Process 9516 attached
+strace: Process 9517 attached
+strace: Process 9518 attached
+strace: Process 9519 attached
+strace: Process 9520 attached
+strace: Process 9521 attached
+strace: Process 9522 attached
+strace: Process 9523 attached
+strace: Process 9524 attached
+strace: Process 9525 attached
+strace: Process 9526 attached
+strace: Process 9527 attached
+strace: Process 9528 attached
+strace: Process 9529 attached
+strace: Process 9530 attached
+strace: Process 9531 attached
+strace: Process 9532 attached
+strace: Process 9533 attached
+strace: Process 9534 attached
+strace: Process 9535 attached
+strace: Process 9536 attached
+strace: Process 9537 attached
+strace: Process 9538 attached
+strace: Process 9539 attached
+strace: Process 9540 attached
+strace: Process 9541 attached
+strace: Process 9542 attached
+strace: Process 9543 attached
+strace: Process 9544 attached
+strace: Process 9545 attached
+strace: Process 9546 attached
+strace: Process 9547 attached
+strace: Process 9548 attached
+strace: Process 9549 attached
+strace: Process 9550 attached
+strace: Process 9551 attached
+strace: Process 9552 attached
+strace: Process 9553 attached
+strace: Process 9554 attached
+strace: Process 9555 attached
+strace: Process 9556 attached
+strace: Process 9557 attached
+strace: Process 9558 attached
+strace: Process 9559 attached
+strace: Process 9560 attached
+strace: Process 9561 attached
+strace: Process 9562 attached
+strace: Process 9563 attached
+strace: Process 9564 attached
+strace: Process 9565 attached
+strace: Process 9566 attached
+strace: Process 9567 attached
+strace: Process 9568 attached
+strace: Process 9569 attached
+strace: Process 9570 attached
+strace: Process 9571 attached
+strace: Process 9572 attached
+strace: Process 9573 attached
+strace: Process 9574 attached
+strace: Process 9575 attached
+strace: Process 9576 attached
+strace: Process 9577 attached
+strace: Process 9578 attached
+strace: Process 9579 attached
+strace: Process 9580 attached
+strace: Process 9581 attached
+strace: Process 9582 attached
+strace: Process 9583 attached
+strace: Process 9584 attached
+strace: Process 9585 attached
+strace: Process 9586 attached
+strace: Process 9587 attached
+strace: Process 9588 attached
+strace: Process 9589 attached
+strace: Process 9590 attached
+strace: Process 9591 attached
+strace: Process 9592 attached
+strace: Process 9593 attached
+strace: Process 9594 attached
+strace: Process 9595 attached
+strace: Process 9596 attached
+strace: Process 9597 attached
+strace: Process 9598 attached
+strace: Process 9599 attached
+strace: Process 9600 attached
+strace: Process 9601 attached
+strace: Process 9602 attached
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 29.16    0.010700          89       120           clone3
+ 22.33    0.008193          17       481           rt_sigprocmask
+ 11.46    0.004205          35       120           madvise
+  8.03    0.002945          39        75           munmap
+  6.25    0.002292          18       121           set_robust_list
+  5.32    0.001952          25        76           mprotect
+  5.24    0.001924          20        96           mmap
+  5.22    0.001914          15       121           rseq
+  2.26    0.000830          36        23         4 futex
+  1.86    0.000682          28        24           brk
+  1.40    0.000515          85         6           read
+  0.67    0.000245          35         7           openat
+  0.37    0.000135          19         7           close
+  0.16    0.000059           9         6           newfstatat
+  0.09    0.000034           8         4           pread64
+  0.06    0.000023          23         1           writev
+  0.02    0.000009           9         1           rt_sigaction
+  0.02    0.000009           9         1           getrandom
+  0.02    0.000007           7         1           set_tid_address
+  0.02    0.000006           6         1           prlimit64
+  0.01    0.000005           2         2         1 arch_prctl
+  0.01    0.000003           3         1           write
+  0.01    0.000003           3         1         1 ioctl
+  0.00    0.000000           0         1         1 access
+  0.00    0.000000           0         1           execve
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.036690          28      1298         7 total

@@ -14,41 +14,10 @@ echo "== callgrind (instruction counts) =="
 valgrind --tool=callgrind --callgrind-out-file="$OUT/callgrind.out" \
   --collect-jumps=yes --cache-sim=yes "$BIN" encode "$PPM" "$OUT/out.brbr" --quality "$Q" \
   > /dev/null 2> "$OUT/callgrind_log.txt" || true
-python3 - "$OUT" <<'EOF'
-import re, sys, subprocess
-out = sys.argv[1]
-raw = subprocess.run(["callgrind_annotate", "--inclusive=yes", "--threshold=1",
-                      out + "/callgrind.out"], capture_output=True, text=True).stdout
-rows = []
-cur = None
-for line in raw.splitlines():
-    m = re.match(r"^\s*([\d,]+)\s+\(([\d.]+)%\)\s+(.+)", line)
-    if not m: continue
-    parts = line.split()
-    # lines look like: "6,849,054 (16.28%)  /build/... " or with prog count "1,234 ( 0.1%) ..."
-    if len(parts) >= 3 and "%" in parts[1]:
-        try:
-            ir = int(parts[0].replace(",", ""))
-        except ValueError:
-            continue
-        fn = " ".join(parts[3:]) if len(parts) > 3 else parts[2]
-        if "???" in fn or "====" in line: continue
-        cur = fn
-        rows.append((ir, fn))
-    else:
-        m2 = re.match(r"^\s*([\d,]+)\s+(.+)$", line)
-        if m2 and cur:
-            try:
-                rows.append((int(m2.group(1).replace(",", "")), cur + " | " + m2.group(2)))
-            except ValueError:
-                pass
-rows.sort(reverse=True)
-with open(out + "/callgrind.csv", "w") as f:
-    f.write("instructions,function\n")
-    for ir, fn in rows[:60]:
-        f.write(f"{ir},\"{fn}\"\n")
-print("callgrind rows:", len(rows), file=sys.stderr)
-EOF
+callgrind_annotate --inclusive=yes --threshold=0.1 "$OUT/callgrind.out" > "$OUT/callgrind_annotate_incl.txt" 2>/dev/null || true
+callgrind_annotate --inclusive=no --threshold=0.1 "$OUT/callgrind.out" > "$OUT/callgrind_annotate_self.txt" 2>/dev/null || true
+# totals are the reliable ground truth; per-function attribution can be warped
+# by callgrind call-attribution artifacts (ld-linux/start_thread subtrees).
 echo "== cachegrind =="
 valgrind --tool=cachegrind --cachegrind-out-file="$OUT/cachegrind.out" \
   "$BIN" encode "$PPM" "$OUT/out.brbr" --quality "$Q" \

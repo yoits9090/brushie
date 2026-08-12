@@ -1,0 +1,12 @@
+{"phase":"decode","name":"chunk","ns":350596.0,"cycles":902068,"tid":35476201,"a":0,"b":0,"c":0,"d":1381,"bytes":1381,"mode":3,"band":0,"channel":0}
+{"phase":"decode","name":"chunk","ns":220193.0,"cycles":485774,"tid":35476201,"a":0,"b":0,"c":1,"d":1442,"bytes":1442,"mode":3,"band":0,"channel":1}
+{"phase":"decode","name":"chunk","ns":166782.0,"cycles":368155,"tid":35476201,"a":0,"b":0,"c":2,"d":1006,"bytes":1006,"mode":3,"band":0,"channel":2}
+{"phase":"decode","name":"chunk","ns":582931.0,"cycles":1291513,"tid":35476201,"a":1,"b":4,"c":0,"d":1985,"bytes":1985,"mode":4,"band":4,"channel":0}
+{"phase":"decode","name":"chunk","ns":1054535.0,"cycles":2326583,"tid":35476201,"a":1,"b":4,"c":1,"d":2372,"bytes":2372,"mode":4,"band":4,"channel":1}
+{"phase":"decode","name":"chunk","ns":211240.0,"cycles":465844,"tid":35476201,"a":1,"b":4,"c":2,"d":933,"bytes":933,"mode":4,"band":4,"channel":2}
+{"phase":"decode","name":"chunk","ns":1414711.0,"cycles":3127120,"tid":35476201,"a":2,"b":4,"c":0,"d":4158,"bytes":4158,"mode":4,"band":4,"channel":0}
+{"phase":"decode","name":"chunk","ns":1515825.0,"cycles":3348057,"tid":35476201,"a":2,"b":4,"c":1,"d":3876,"bytes":3876,"mode":4,"band":4,"channel":1}
+{"phase":"decode","name":"chunk","ns":382064.0,"cycles":842677,"tid":35476201,"a":2,"b":4,"c":2,"d":271,"bytes":271,"mode":4,"band":4,"channel":2}
+{"phase":"decode","name":"chunk","ns":2326636.0,"cycles":5128868,"tid":35476201,"a":3,"b":4,"c":0,"d":1362,"bytes":1362,"mode":4,"band":4,"channel":0}
+{"phase":"decode","name":"synthesize","ns":31153173.0,"cycles":68530125,"tid":35476201,"a":0,"b":0,"c":0,"d":0}
+{"phase":"decode","name":"entropy_all","ns":39505794.0,"cycles":86903360,"tid":35476201,"a":0,"b":0,"c":0,"d":0}
