@@ -19,3 +19,9 @@ __pycache__/
 
 # Scratch
 /tmp/
+
+# campaign tracking artifacts (kept local, big)
+tracking/*/
+brushie_track.jsonl
+campaign_baseline*
+lab_*

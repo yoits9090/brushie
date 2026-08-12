@@ -47,6 +47,19 @@ JPEG 4/3. See `benchmarks/`, `dash/broad.json`, and
 `harness_v5_final_quick_report.md`. SSIMULACRA2/Butteraugli and blinded
 humans remain required before product claims.
 
+## Moonshot campaign (active)
+
+Target: 2x better than competitors at equal quality — mean bytes at the
+.970/.985/.995 gates cut to ~half of AVIF's (4,700/9,300/21,800 on the broad
+corpus) with CPU-only encode+decode at least as fast as today. Four parallel
+sub-agent labs run in git worktrees (branches `lab/coder`, `lab/geom`,
+`lab/metric`, `lab/speed`) on two Colab-CLI CPU boxes (`colab-lab`,
+`colab-sweep`); see [docs/labs.md](docs/labs.md) for the playbook,
+[tracking/README.md](tracking/README.md) for the total-instrumentation
+convention (per-stage ns+cycle timelines via `BRUSHIE_TRACK=1`,
+per-chunk byte audits, callgrind/cachegrind instruction and cache counters),
+and `scripts/track.py` / `scripts/track_diff.py` for run capture and diffing.
+
 ## Build
 
 ```sh
