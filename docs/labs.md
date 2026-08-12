@@ -31,6 +31,14 @@ J2K 12,744 / 23,960 / 57,501. CAPS: 4/4 and 163/163 coverage everywhere.
   then build there with clang++ (see box/build.sh). Datasets live on the box at
   /content/brushie/datasets (read-only shared).
 
+## Harness location note
+The Mac's brew ffmpeg lacks libaom-av1/libwebp encoders, so competitor rows
+(AVIF/WebP) only encode correctly on the BOXES (ffmpeg 4.4.2 has libaom-av1 +
+libwebp + libopenjpeg). Run enterprise_eval.py / bench.py on your box slot
+(python3 + numpy + PIL preinstalled there), or the boxes' shared
+/content/brushie checkout. Local Mac runs are CAPS-only (use for fast
+iterate/decode checks, not for competitor comparisons).
+
 ## Measurement discipline (non-negotiable)
 1. Build locally: clang++ -std=c++17 -O3 -ffast-math -Iinclude src/codec.cpp
    src/main.cpp -o build/brushie -pthread (or cmake). Run tests: build/test_codec.
