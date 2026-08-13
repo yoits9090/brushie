@@ -1,0 +1,212 @@
+{
+ "metrics": {
+  "ssimulacra2 60.0": {
+   "AVIF": {
+    "mean_bytes": 18374,
+    "coverage": "159/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 23151,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 22101,
+    "coverage": "163/163"
+   },
+   "JPEG XL": {
+    "mean_bytes": 18607,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 24386,
+    "coverage": "163/163"
+   },
+   "WebP": {
+    "mean_bytes": 18534,
+    "coverage": "163/163"
+   }
+  },
+  "ssimulacra2 75.0": {
+   "AVIF": {
+    "mean_bytes": 31124,
+    "coverage": "157/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 45253,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 39528,
+    "coverage": "163/163"
+   },
+   "JPEG XL": {
+    "mean_bytes": 32003,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 42606,
+    "coverage": "163/163"
+   },
+   "WebP": {
+    "mean_bytes": 32966,
+    "coverage": "161/163 PARTIAL"
+   }
+  },
+  "ssimulacra2 85.0": {
+   "AVIF": {
+    "mean_bytes": 56381,
+    "coverage": "140/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 89271,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 68546,
+    "coverage": "144/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 52408,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 85917,
+    "coverage": "163/163"
+   },
+   "WebP": {
+    "mean_bytes": 56558,
+    "coverage": "129/163 PARTIAL"
+   }
+  },
+  "ssimulacra2 90.0": {
+   "AVIF": {
+    "mean_bytes": 82263,
+    "coverage": "79/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 182609,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 93072,
+    "coverage": "89/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 75820,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 162074,
+    "coverage": "159/163 PARTIAL"
+   },
+   "WebP": {
+    "mean_bytes": 72159,
+    "coverage": "57/163 PARTIAL"
+   }
+  },
+  "butteraugli 1.3": {
+   "AVIF": {
+    "mean_bytes": 30270,
+    "coverage": "133/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 45958,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 36768,
+    "coverage": "150/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 28173,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 44428,
+    "coverage": "163/163"
+   },
+   "WebP": {
+    "mean_bytes": 28442,
+    "coverage": "149/163 PARTIAL"
+   }
+  },
+  "butteraugli 0.9": {
+   "AVIF": {
+    "mean_bytes": 45603,
+    "coverage": "98/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 81162,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 52802,
+    "coverage": "135/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 40193,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 78116,
+    "coverage": "163/163"
+   },
+   "WebP": {
+    "mean_bytes": 41824,
+    "coverage": "132/163 PARTIAL"
+   }
+  },
+  "butteraugli 0.6": {
+   "AVIF": {
+    "mean_bytes": 69838,
+    "coverage": "71/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 164125,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 77956,
+    "coverage": "111/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 56120,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 145618,
+    "coverage": "160/163 PARTIAL"
+   },
+   "WebP": {
+    "mean_bytes": 63837,
+    "coverage": "100/163 PARTIAL"
+   }
+  },
+  "butteraugli 0.4": {
+   "AVIF": {
+    "mean_bytes": 89058,
+    "coverage": "32/163 PARTIAL"
+   },
+   "CAPS": {
+    "mean_bytes": 223644,
+    "coverage": "163/163"
+   },
+   "JPEG": {
+    "mean_bytes": 100246,
+    "coverage": "73/163 PARTIAL"
+   },
+   "JPEG XL": {
+    "mean_bytes": 79705,
+    "coverage": "163/163"
+   },
+   "JPEG2000": {
+    "mean_bytes": 196293,
+    "coverage": "76/163 PARTIAL"
+   },
+   "WebP": {
+    "mean_bytes": 90995,
+    "coverage": "45/163 PARTIAL"
+   }
+  }
+ }
+}

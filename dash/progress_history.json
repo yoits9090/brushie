@@ -91,5 +91,35 @@
    "0.985": "triple merge",
    "0.995": "triple merge"
   }
+ },
+ {
+  "tag": "007-entropy-audit",
+  "timestamp": "2026-08-13",
+  "gates": {
+   "0.970": 9119,
+   "0.985": 16162,
+   "0.995": 35380
+  },
+  "notes": {
+   "_summary": "entropy audit: detail coder within 1.8-5.4% of context-optimal; 2x must change symbols (RDO/inter-band prediction/grain), not contexts",
+   "0.970": "coder near-optimal",
+   "0.985": "coder near-optimal",
+   "0.995": "coder near-optimal"
+  }
+ },
+ {
+  "tag": "008-honest-metrics",
+  "timestamp": "2026-08-13",
+  "gates": {
+   "0.970": 9119,
+   "0.985": 16162,
+   "0.995": 35380
+  },
+  "notes": {
+   "_summary": "first SSIMULACRA2/Butteraugli landscape: CAPS full-coverage everywhere; 1.26x off AVIF at S2-60, 2-3x at transparency; JPEG XL is king",
+   "0.970": "real metrics landed",
+   "0.985": "real metrics landed",
+   "0.995": "real metrics landed"
+  }
  }
 ]
