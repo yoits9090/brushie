@@ -47,3 +47,14 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
 - 2026-08-13: boxes died (keep-alive DNS blip); re-provisioned brushie-sweep,
   3-VM account cap discovered, ssh adc auto-create fixed.
 - 2026-08-13: metric-lab first honest landscape published (above).
+- 2026-08-13/14: geom-lab shipped mode 16 adaptive flat-block base
+  (9,116/16,143/35,352 quick, -0.1%); measured: base LL is 17-40% of
+  chat/meme at .970 (detail bands dominate), plane/RLE/block-poly predictors
+  lose to median, inter-band VALUE prediction loses on text (parent-significance
+  already captures correlation). Gap is representational. Next: grain synthesis,
+  merged-band fix, chroma-from-luma.
+- 2026-08-13/14: coder-lab: energy-bucket sig contexts rejected (+0.7-4.4%);
+  unary adaptation rate 1/16 wins ~-0.6% fixed-q (harness verification pending).
+- 2026-08-13/14: speed-lab: branchless range coder + in-place 5/3 lifting
+  (-56MB/encode zeroing) + persistent thread pool landed, byte-identical;
+  fixing inverse_level odd-dim corruption found by the refactor.
