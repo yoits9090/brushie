@@ -188,3 +188,57 @@ At the previous tuned matched points, exact v3 means (same reconstruction)
 are 10,325 / 18,342 / 38,174 bytes at .970/.985/.995, another 4.1%/2.5%/1.4%
 reduction. UI/meme individual files fall 12-16% because directory overhead
 was 31-34% in v2.
+
+## geom-lab session (lab/geom branch, CAPS campaign)
+
+Baseline (lab_0, committed): quick harness 9,120 / 16,162 / 35,380 — exact
+match vs frozen v5 baseline. All experiments below measured with
+`python3 scripts/enterprise_eval.py --quick` + per-image audits via
+scripts/byte_audit.py and a single-image iter harness (bytes + windowed
+MS-SSIM at the exact harness quality/base settings).
+
+### Shipped: per-chunk adaptive base mode (mode 16 flat-block, trial-selected)
+Base-LL chunks now trial-encode median-predict (mode 3) vs a new 4x4
+flat-block mode 16 (flags + flat values predicted from left/above blocks +
+median residuals; contexts 0..3/4..7/57..60, rest shared layout) and keep
+the smaller payload; the mode byte carries the choice (deterministic,
+decoder-side cost zero). Both modes reconstruct bit-identical quantized
+bands, so this is pure byte selection.
+Quick harness (lab_1_base16): 9,116 / 16,143 / 35,352 vs 9,120 / 16,162 /
+35,380 (-0.04% / -0.12% / -0.08%). Per image at gate qualities:
+chat .985 3,593 -> 3,519 (-2.1%), chat .995 7,128 -> 7,015 (-1.6%),
+chat .970 2,429 -> 2,424, meme .970 1,874 -> 1,871, kodak02 .970
+16,870 -> 16,864, kodak01 unchanged. Mode 16 wins when the quantized base
+has flat 4x4 runs at moderate step sizes (text UI at high quality); mode 3
+stays for noisy/photo bases.
+Tests + 300-iteration fuzz pass; old v1-v5 streams still decode.
+
+### Rejected: plane predictor base modes (13/14, BRUSHIE_BASE)
+p = a+b-c unclamped/clamped for the base LL. Meme base chroma (gradient
+sinusoid) barely moved (491 -> 494B); chat/photos neutral-to-worse. Residual
+entropy analysis on dumped quantized bases: median 2.2 vs plane 2.0 b/coef
+on meme luma (still loses after coder overhead); on the chat base median is
+already best (1.36 b/coef). Directional continuation predictors (2A-AA,
+2B-BB, planar switch) beat median only on chat chroma by ~0.15 b/coef, not
+enough to survive the mode overhead. Kept behind BRUSHIE_BASE for sweeps.
+
+### Rejected: base-band RLE (measured in Python, never coded)
+Zero-run RLE on median residuals costs ~269B vs mode-3's 179B on chat base
+luma (134 nonzero values in 704 coeffs at 19% nz) and loses on the meme
+base too. The adaptive arithmetic sig bits are already cheaper than
+varint runs at these densities.
+
+### Rejected: 4x4/8x8 block polynomial base fitting (measured in Python)
+LSQ (mean, dx, dy) per block on the quantized base: residual entropy
+3.58/4.83 b/coef (4x4/8x8) vs median-predict 2.2 on meme luma; bar edges +
+sinusoid make block fits overshoot. Not coded.
+
+### Analysis: inter-band value prediction on detail bands (chat, q38)
+Dumped all bands; tested parent-value and parent-gradient (x/y) predictions
+in child-quantized units. All lose on the sparse text detail bands:
+L1-H c0 nz 8% ent 0.60 b/coef -> parent_val nz 100% ent 2.06; parent_gx
+1.63, parent_gy 1.55. L2/L3 bands similar. The chat detail bands are
+already sparse (4-23% nz) and the parent-significance contexts are doing
+the work; predicting VALUES from the parent re-injects the parent DC into
+every coefficient. Conclusion: the chat/meme gap vs AVIF is representational
+(wavelet vs block prediction), not base- or parent-prediction overhead.
