@@ -1,0 +1,13 @@
+{
+  "git_sha": "c36c93dd28de282b83446d7ebde5bcdc142a62a6",
+  "images": 163,
+  "ffmpeg": "/opt/homebrew/bin/ffmpeg",
+  "tools": {
+    "ssimulacra2": "/Users/ace/projects/brushie-metric/tools/ssimulacra2-src/ssimulacra2",
+    "butteraugli": "/Users/ace/projects/brushie-metric/tools/jxl-install/bin/butteraugli_main",
+    "cjxl": "/Users/ace/projects/brushie-metric/tools/jxl-install/bin/cjxl",
+    "djxl": "/Users/ace/projects/brushie-metric/tools/jxl-install/bin/djxl"
+  },
+  "ssimulacra2_id": "ssimulacra2-v2.1-standalone",
+  "butteraugli_id": "butteraugli-libjxl-0.13-3norm"
+}
