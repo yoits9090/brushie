@@ -242,3 +242,54 @@ already sparse (4-23% nz) and the parent-significance contexts are doing
 the work; predicting VALUES from the parent re-injects the parent DC into
 every coefficient. Conclusion: the chat/meme gap vs AVIF is representational
 (wavelet vs block prediction), not base- or parent-prediction overhead.
+
+### Shipped: merged band-4 chunks with absent sections (empty D/V)
+H/V detail pairs now merge even when the D band is inactive: a mode byte of
+0 marks an absent section (band left zero at decode; H always present).
+Saves one 16B directory entry + one k0/block-flag header per empty section.
+Quick harness (lab_2_merge): 9,110 / 16,139 / 35,350 vs lab_1 9,116 /
+16,143 / 35,352. Per image at gates: meme .970 1,871 -> 1,859 (-12),
+kodak01 15,306 -> 15,297, chat 2,424 -> 2,421, kodak02 16,864 -> 16,861.
+Bit-identical reconstruction. Old v5 streams (all sections present) decode
+unchanged; validation tightened for absent markers. Fuzz clean.
+
+### Rejected: grain synthesis (M6) — zero-noise-blocks + decoder noise
+BRUSHIE_GRAIN_ZERO probe zeroes noise-like 8x8 blocks (max|q|<=1-2,
+significance-map lag-1 autocorr < 0.15-0.20, mean~0) in the finest luma
+detail level before coding. kodak01 q40: -941B (-6.1%) for ms_ssim 0.97023
+-> 0.96738; kodak02 q76: -925B for 0.97003 -> 0.96848. Decoder-side
+synthetic noise (pixel-space probe, sigma 3/5/7, deterministic PRNG) makes
+ALL THREE metrics worse, monotonically in sigma (kodak01: ms_ssim
+0.96738->0.96550->0.96231; SSIMULACRA2 29.1->28.4->26.8; Butteraugli
+2.990->3.016->3.107). Mechanism: independent synthetic noise adds
+reconstruction variance without adding covariance, so windowed SSIM/S2
+drop, and Butteraugli 3-norm punishes the noise directly. The zeroed
+blocks were also not pure noise (|q|<=2 texture carries real metric
+weight). Verdict: byte/quality slope of grain-zeroing ~= slope of coding
+the coefficients (-0.003 ms_ssim/KB); synthesis only loses. Retest only
+behind a noise-rewarding perceptual metric (LPIPS/blinded humans).
+Probe kept behind BRUSHIE_GRAIN_ZERO for that retest.
+
+### Rejected: chroma-from-luma (M5, CCLM-style)
+Measured collocated luma 2x2-block vs chroma detail on dumped bands
+(chat q38, kodak02 q76): fitted alpha ~ 0, corr in [-0.19, +0.16] on
+kodak02 and ~0 on chat. Chroma detail at these levels carries smooth
+color variation luma does not predict; where chroma fires (color edges)
+the coefficients are already sparse/cheap. Not implemented.
+
+### Rejected: block-DCT of the base band (measured in Python)
+4x4/8x8 orthonormal DCT on the quantized base (chat + meme): total
+entropy-equivalent 1.90-3.31 b/coef vs median-predict 0.64-2.16 b/coef.
+Block boundaries + coarse sinusoid beat any AC-concentration gain.
+Not implemented.
+
+### Rejected: levelmul reallocation for chat (BRUSHIE_LEVELMUL sweep)
+l1:0.7 etc. move along the same RD curve (2524B @ 0.97260 vs default q40
+2490B @ 0.97208; l5:1.4,l4:1.2 = identical to default). The empirical
+step table remains a local optimum (consistent with the v4 table-sweep
+rejections).
+
+### Rejected: BRUSHIE_BLOCK 8/32 for mode-12 detail bands
+32 beats 16 by 14B on chat / 5B on meme at the gate, 8 loses. Not shipped
+because the block size is env-derived on both sides (not stream-safe);
+would need mode bytes 17/18 for a <1% win — not worth the format surface.
