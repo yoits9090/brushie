@@ -31,13 +31,15 @@ J2K 12,744 / 23,960 / 57,501. CAPS: 4/4 and 163/163 coverage everywhere.
   then build there with clang++ (see box/build.sh). Datasets live on the box at
   /content/brushie/datasets (read-only shared).
 
-## Harness location note
-The Mac's brew ffmpeg lacks libaom-av1/libwebp encoders, so competitor rows
-(AVIF/WebP) only encode correctly on the BOXES (ffmpeg 4.4.2 has libaom-av1 +
-libwebp + libopenjpeg). Run enterprise_eval.py / bench.py on your box slot
-(python3 + numpy + PIL preinstalled there), or the boxes' shared
-/content/brushie checkout. Local Mac runs are CAPS-only (use for fast
-iterate/decode checks, not for competitor comparisons).
+## Harness location note (updated)
+The Mac now has ALL competitor encoders (ffmpeg 8.1.2 + libsvtav1, jpeg2000;
+cwebp/dwebp 1.6.0) and its quick harness reproduces the frozen baselines
+EXACTLY (verified 2026-08-12: CAPS 9,120/16,162/35,381; AVIF
+6,466/12,948/31,810; WebP 7,658/13,901/65,498; JPEG 10,140/16,328/32,427;
+J2K 10,046/19,084/44,377). RUN THE QUICK HARNESS ON THE MAC:
+  python3 -u scripts/enterprise_eval.py --quick --output-prefix <your prefix>
+Boxes remain for x86 builds, valgrind/callgrind/strace profiling, and
+parallel sweeps (box ffmpeg 4.4.2 lacks libsvtav1 - the harness crashes there).
 
 ## Measurement discipline (non-negotiable)
 1. Build locally: clang++ -std=c++17 -O3 -ffast-math -Iinclude src/codec.cpp
