@@ -16,7 +16,7 @@ Usage: python3 scripts/entropy_audit.py <stream.brbr> [more streams...]
        python3 scripts/entropy_audit.py --corpus q30 q50 q75  (broad corpus)
 """
 from __future__ import annotations
-import argparse, csv, math, struct, subprocess, sys, tempfile
+import argparse, csv, json, math, os, struct, subprocess, sys, tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -96,18 +96,18 @@ class Dec:
         self.pos += 1
         return b
 
-    def bit(self, probs, idx, pass_name):
+    def bit(self, probs, idx, pass_name, shift=5):
         prob = probs[idx]
         bound = (self.range >> 11) * prob
         if self.code < bound:
             self.range = bound
-            p = prob + ((2048 - prob) >> 5)
+            p = prob + ((2048 - prob) >> shift)
             probs[idx] = p if p < 2048 else 2047
             b = 0
         else:
             self.code -= bound
             self.range -= bound
-            p = prob - (prob >> 5)
+            p = prob - (prob >> shift)
             probs[idx] = p if p > 0 else 1
             b = 1
         while self.range < (1 << 24):
@@ -138,22 +138,30 @@ class Audit:
     def totals(self):
         model_bits = sum(c[2] for c in self.ctx.values())
         ctx_entropy = 0.0
-        for (pn, _ctx), (c0, c1, _s) in self.ctx.items():
+        per_pass_ent = {}
+        per_pass_model = {}
+        for (pn, _ctx), (c0, c1, s) in self.ctx.items():
             n = c0 + c1
+            per_pass_model[pn] = per_pass_model.get(pn, 0.0) + s
             if n == 0: continue
             p1 = c1 / n
             e = 0.0
             if 0 < p1 < 1:
                 e = -p1 * math.log2(p1) - (1 - p1) * math.log2(1 - p1)
             ctx_entropy += n * e
+            per_pass_ent[pn] = per_pass_ent.get(pn, 0.0) + n * e
         zero_entropy = 0.0
+        per_pass_zero = {}
         for pn, (c0, c1) in self.zero.items():
             n = c0 + c1
             if n == 0: continue
             p1 = c1 / n
             if 0 < p1 < 1:
-                zero_entropy += n * (-p1 * math.log2(p1) - (1 - p1) * math.log2(1 - p1))
-        return model_bits, ctx_entropy, zero_entropy
+                e = n * (-p1 * math.log2(p1) - (1 - p1) * math.log2(1 - p1))
+                zero_entropy += e
+                per_pass_zero[pn] = e
+        return (model_bits, ctx_entropy, zero_entropy, per_pass_ent,
+                per_pass_model, per_pass_zero)
 
 
 def walk_band(dec, probs, audit, dest, stride, tw, th, version, mode,
@@ -172,11 +180,103 @@ def parent_at(parent, stride, pw, ph, x, y):
     return parent[py * stride + px]
 
 
+def parent_mag_mode(mode):
+    return mode in (13, 14)
+
+
+def energy_bucket_mode(mode):
+    return mode == 15
+
+
+def energy_bucket_count():
+    e = os.environ.get("BRUSHIE_EBUCKETS")
+    if e and int(e) in (8, 16, 32):
+        return int(e)
+    return 8
+
+
+def energy_bucket_sum(band, stride, x, y):
+    s = 0
+    if x > 0: s += abs(band[y * stride + x - 1])
+    if y > 0: s += abs(band[(y - 1) * stride + x])
+    if x > 0 and y > 0: s += abs(band[(y - 1) * stride + x - 1])
+    return min(s, energy_bucket_count() - 1)
+
+
+def sig_idx15(bucket, parent_sig):
+    return bucket + (energy_bucket_count() if parent_sig else 0)
+
+
+def unary_shift(version):
+    if version < 6:
+        return 5
+    e = os.environ.get("BRUSHIE_UNARY_RATE")
+    if e and int(e) in range(3, 9):
+        return int(e)
+    return 4
+
+
+def sig_idx_pm(ctx8, pclass):
+    return ctx8 + pclass * 8
+
+
+def sign_idx_pm(ctx4):
+    return 32 + ctx4
+
+
+def unary_idx_pm(pos, pclass):
+    return 36 + pclass * 6 + min(pos, 5)
+
+
+def rem_idx_pm(i):
+    return 60 + i
+
+
+def parent_block_features(parent, stride, pw, ph, scale_num, scale_den, w, h):
+    pclass = [0] * (w * h)
+    pmean = [0] * (w * h)
+    if parent is None or pw == 0 or ph == 0:
+        return pclass, pmean
+    for y in range(h):
+        py = min(y // 2, ph - 1)
+        py1 = min(py + 1, ph - 1)
+        for x in range(w):
+            px = min(x // 2, pw - 1)
+            px1 = min(px + 1, pw - 1)
+            s0 = (abs(parent[py * stride + px]) * scale_num) // scale_den
+            s1 = (abs(parent[py * stride + px1]) * scale_num) // scale_den
+            s2 = (abs(parent[py1 * stride + px]) * scale_num) // scale_den
+            s3 = (abs(parent[py1 * stride + px1]) * scale_num) // scale_den
+            mx = max(s0, s1, s2, s3)
+            i = y * w + x
+            pclass[i] = 0 if mx == 0 else (1 if mx == 1 else (2 if mx <= 3 else 3))
+            pmean[i] = (s0 + s1 + s2 + s3 + 2) // 4
+    return pclass, pmean
+
+
+def zigzag_residual(m_orig, mp):
+    d = m_orig - mp
+    return 2 * d if d >= 0 else -2 * d - 1
+
+
 def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
-          use_prediction, parent, parent_stride, parent_w, parent_h, k0):
+          use_prediction, parent, parent_stride, parent_w, parent_h, k0,
+          step_c=1, step_p=1):
     k = k0
     mag_sum, mag_count = 0, 0
     use_parent = parent is not None
+    if os.environ.get("BRUSHIE_AUDIT_STATS"):
+        _walk.stat_out = []
+        _walk.stat_par = parent
+        _walk.stat_pw = parent_w
+        _walk.stat_ph = parent_h
+        _walk.stat_pstride = parent_stride
+        _walk.stat_sp = step_p
+        _walk.stat_sc = step_c
+    pclass_arr, pmean_arr = [], []
+    if (parent_mag_mode(mode) or os.environ.get("BRUSHIE_AUDIT_STATS")) and use_parent:
+        pclass_arr, pmean_arr = parent_block_features(
+            parent, parent_stride, parent_w, parent_h, step_p, step_c, tw, th)
     if mode == 12:
         kB = 16
         bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
@@ -212,7 +312,7 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                             kk = max(nk, k)
                             while True:
                                 uctx = unary_idx(version, mode, qq, 0)
-                                if dec.bit(probs, uctx, "unary"): break
+                                if dec.bit(probs, uctx, "unary", unary_shift(version)): break
                                 qq += 1
                             m = qq << kk
                             for i in range(kk):
@@ -238,18 +338,43 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
         for x in range(tw):
             pv = parent_at(parent, parent_stride, parent_w, parent_h, x, y)
             raw_ctx = sig_context(dest, stride, x, y)
+            fi = y * stride + x
             if mode == 11 and use_parent:
                 s = dec.bit(probs, raw_ctx if pv == 0 else sig_idx(version, mode, raw_ctx, False), "sig")
+            elif parent_mag_mode(mode) and use_parent:
+                s = dec.bit(probs, sig_idx_pm(raw_ctx, pclass_arr[fi]), "sig")
+            elif energy_bucket_mode(mode) and use_parent:
+                s = dec.bit(probs, sig_idx15(energy_bucket_sum(dest, stride, x, y), pv != 0), "sig")
             else:
                 s = dec.bit(probs, sig_idx(version, mode, raw_ctx, use_parent and pv != 0), "sig")
             q = 0
             if s:
-                sc = sign_idx(version, mode, sign_context(dest, stride, x, y),
-                              use_parent and pv < 0)
+                if parent_mag_mode(mode) and use_parent:
+                    sc = sign_idx_pm(sign_context(dest, stride, x, y))
+                else:
+                    sc = sign_idx(version, mode, sign_context(dest, stride, x, y),
+                                  use_parent and pv < 0)
                 sign = dec.bit(probs, sc, "sign")
                 qq = 0
                 kk = k
-                if mode in (8, 9):
+                if parent_mag_mode(mode) and use_parent:
+                    if mode == 14:
+                        rl = ra = 0
+                        if x > 0 and dest[fi - 1] != 0:
+                            dl = (abs(dest[fi - 1]) - 1) - pmean_arr[fi - 1]
+                            rl = 2 * dl if dl >= 0 else -2 * dl - 1
+                        if y > 0 and dest[fi - stride] != 0:
+                            da = (abs(dest[fi - stride]) - 1) - pmean_arr[fi - stride]
+                            ra = 2 * da if da >= 0 else -2 * da - 1
+                        mean1 = (rl + ra) // 2 + 1
+                    else:
+                        lv13 = dest[fi - 1] if x > 0 else 0
+                        av13 = dest[fi - stride] if y > 0 else 0
+                        mean1 = (abs(lv13) + abs(av13)) // 2 + 1
+                    nk = 0
+                    while nk < 12 and (1 << (nk + 1)) <= mean1: nk += 1
+                    kk = max(nk, k)
+                elif mode in (8, 9):
                     lv8 = dest[y * stride + x - 1] if x > 0 else 0
                     av8 = dest[(y - 1) * stride + x] if y > 0 else 0
                     ml = abs(lv8); ma = abs(av8)
@@ -258,18 +383,28 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                     while nk < 12 and (1 << (nk + 1)) <= mean1: nk += 1
                     kk = max(nk, k)
                 while True:
-                    if mode in (4, 6):
+                    if parent_mag_mode(mode) and use_parent:
+                        uctx = unary_idx_pm(qq, pclass_arr[fi])
+                    elif mode in (4, 6):
                         lv = dest[y * stride + x - 1] if x > 0 else 0
                         av = dest[(y - 1) * stride + x] if y > 0 else 0
                         mclass = min(mag_class(lv), mag_class(av))
                         uctx = unary_idx(version, mode, qq, mclass)
                     else:
                         uctx = unary_idx(version, mode, qq, 0)
-                    if dec.bit(probs, uctx, "unary"): break
+                    if dec.bit(probs, uctx, "unary", unary_shift(version)): break
                     qq += 1
                 m = qq << kk
                 for i in range(kk):
-                    m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
+                    if parent_mag_mode(mode) and use_parent:
+                        m |= dec.bit(probs, rem_idx_pm(i), "rem") << i
+                    else:
+                        m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
+                m_decoded = m
+                if parent_mag_mode(mode) and mode == 14 and use_parent:
+                    d = (m + (m & 1)) >> 1
+                    neg = (m & 1) != 0
+                    m = pmean_arr[fi] - d if neg else pmean_arr[fi] + d
                 if mode == 9:
                     lv9 = dest[y * stride + x - 1] if x > 0 else 0
                     av9 = dest[(y - 1) * stride + x] if y > 0 else 0
@@ -279,13 +414,31 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                     m = mp - d if neg else mp + d
                 q = m + 1
                 if sign: q = -q
-                mag_sum += m
+                if parent_mag_mode(mode) and mode == 14 and use_parent:
+                    mag_sum += m_decoded
+                else:
+                    mag_sum += m
                 mag_count += 1
                 if mag_count == 64:
                     v = mag_sum // 64
                     nk = 0
                     while nk < 12 and (1 << (nk + 1)) <= v: nk += 1
                     k = nk; mag_sum = 0; mag_count = 0
+                if os.environ.get("BRUSHIE_AUDIT_STATS") and pmean_arr:
+                    rec = {"pclass": pclass_arr[fi], "pmean": pmean_arr[fi],
+                           "m": abs(q) - 1, "sig": 1}
+                    if _walk.stat_par is not None:
+                        par = _walk.stat_par
+                        pw = _walk.stat_pw; ph = _walk.stat_ph
+                        px = min(x // 2, pw - 1); py = min(y // 2, ph - 1)
+                        px1 = min(px + 1, pw - 1); py1 = min(py + 1, ph - 1)
+                        s00 = (abs(par[py * _walk.stat_pstride + px]) * _walk.stat_sp) // _walk.stat_sc
+                        s10 = (abs(par[py * _walk.stat_pstride + px1]) * _walk.stat_sp) // _walk.stat_sc
+                        s01 = (abs(par[py1 * _walk.stat_pstride + px]) * _walk.stat_sp) // _walk.stat_sc
+                        s11 = (abs(par[py1 * _walk.stat_pstride + px1]) * _walk.stat_sp) // _walk.stat_sc
+                        rec.update({"gx": abs(s10 - s00), "gy": abs(s01 - s00),
+                                    "gd": abs(s11 - s00), "gmx": max(s00, s10, s01, s11)})
+                    _walk.stat_out.append(rec)
             if use_prediction:
                 a = dest[y * stride + x - 1] if x > 0 else 0
                 b = dest[(y - 1) * stride + x] if y > 0 else 0
@@ -303,6 +456,17 @@ def walk_shapes(w, h, levels):
         cw = (cw + 1) // 2
         chh = (chh + 1) // 2
     return out, (cw, chh)
+
+
+def _dump_stats(path, channel, layer, band):
+    rows = [{"channel": channel, "layer": layer, "band": band, **s}
+            for s in _walk.stat_out]
+    _walk.stat_out = []
+    out = os.environ.get("BRUSHIE_AUDIT_STATS_FILE",
+                         str(path) + ".stats.jsonl")
+    with open(out, "a") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
 
 
 def audit_stream(path: Path):
@@ -356,6 +520,7 @@ def audit_stream(path: Path):
                 3: [0] * ((w // 2) * (h // 2)),
             })
     rows = []
+    steps = {}  # (channel, layer, band) -> step, for parent scaling in modes 13/14
     cumulative = data_offset
     for ci in range(chunk_count):
         d = data[64 + ci * entry:64 + (ci + 1) * entry]
@@ -368,7 +533,7 @@ def audit_stream(path: Path):
         assert layer <= levels and channel < channels
         payload = data[poff:poff + psize]
         audit = Audit()
-        probs = [2047] * 65  # fresh per decode_band_arith call; band-4 resets per section below
+        probs = [2047] * 128  # fresh per decode_band_arith call; band-4 resets per section below
         sh = shapes[channel]
         row = {"layer": layer, "band": band, "channel": channel, "mode": mode,
                "payload_bytes": psize, "k0": -1}
@@ -385,7 +550,8 @@ def audit_stream(path: Path):
             for bi in range(3):
                 sec = payload[cursor:cursor + secs[bi]]
                 cursor += secs[bi]
-                probs = [2047] * 65  # each section is its own decode_band_arith call
+                probs = [2047] * 128  # each section is its own decode_band_arith call
+                sec_step = step if bi < 2 else step_d
                 # parent: base for layer 1, else same band one level coarser
                 if layer == 1:
                     par = base_store[channel]
@@ -396,12 +562,18 @@ def audit_stream(path: Path):
                     par = detail[channel][len(sh) - (layer - 1)][bi + 1]
                     pw = (pl[0] // 2) if bi != 1 else pl[2]
                     ph = pl[3] if bi == 0 else (pl[1] // 2)
+                par_step = steps.get((channel, 0, 0), 1) if layer == 1 \
+                    else steps.get((channel, layer - 1, bi + 1), 1)
                 dec = Dec(sec[1:], len(sec) - 1, audit)
                 row["k0"] = sec[0] if bi == 0 else row["k0"]
                 _walk(dec, probs, audit, detail[channel][idx][bi + 1],
                       dims[bi][0], dims[bi][0], dims[bi][1], version,
-                      modes[bi], False, par, pw, pw, ph, sec[0])
+                      modes[bi], False, par, pw, pw, ph, sec[0],
+                      step_c=sec_step, step_p=par_step)
+                if os.environ.get("BRUSHIE_AUDIT_STATS"):
+                    _dump_stats(path, channel, layer, bi + 1)
                 assert dec.pos == len(sec) - 1, f"chunk {ci} sec {bi} consumed {dec.pos}/{len(sec)-1}"
+                steps[(channel, layer, bi + 1)] = sec_step
         else:
             if layer == 0:
                 bw = base_w if channel in (0, 3) else ch_bw
@@ -430,12 +602,23 @@ def audit_stream(path: Path):
                     ph = pl[3] if band == 1 else (pl[1] // 2 if band in (2, 3) else pl[1] // 2)
             dec = Dec(payload[1:], psize - 1, audit)
             row["k0"] = payload[0]
+            par_step = (steps.get((channel, 0, 0), 1) if layer == 1
+                        else steps.get((channel, layer - 1, band), 1)) \
+                if (mode != 3 and layer > 0) else 1
             _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
-                  band == 0, par, pw, pw, ph, payload[0])
+                  band == 0, par, pw, pw, ph, payload[0],
+                  step_c=step, step_p=par_step)
+            if os.environ.get("BRUSHIE_AUDIT_STATS"):
+                _dump_stats(path, channel, layer, band)
             assert dec.pos == psize - 1, f"chunk {ci} consumed {dec.pos}/{psize-1}"
-        mb, ce, ze = audit.totals()
+            steps[(channel, layer, band)] = step
+        mb, ce, ze, ppe, ppm, ppz = audit.totals()
         row.update({"pass_bits": dict(audit.pass_bits), "model_bits": mb,
                     "ctx_entropy_bits": ce, "zero_entropy_bits": ze})
+        for pn in ("blk", "sig", "sign", "unary", "rem"):
+            row[f"ent_{pn}"] = ppe.get(pn, 0.0)
+            row[f"model_{pn}"] = ppm.get(pn, 0.0)
+            row[f"zero_{pn}"] = ppz.get(pn, 0.0)
         rows.append(row)
     assert cumulative == len(data), f"trailing bytes: {cumulative} vs {len(data)}"
     return rows

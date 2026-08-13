@@ -188,3 +188,55 @@ At the previous tuned matched points, exact v3 means (same reconstruction)
 are 10,325 / 18,342 / 38,174 bytes at .970/.985/.995, another 4.1%/2.5%/1.4%
 reduction. UI/meme individual files fall 12-16% because directory overhead
 was 31-34% in v2.
+
+## Coder-lab session (lab/coder)
+
+Measurement discipline: quick harness (2 Kodak + chat + meme, 512px,
+windowed MS-SSIM `brushie-box11-ms-ssim-v1`) for gate decisions; 12-16
+broad-corpus fixed-q byte sums for fast iteration (identical quantization =>
+identical pixels => bytes comparable at fixed q). Baseline: CAPS
+9,120 / 16,162 / 35,380 (frozen v5), reproduced locally (9,120/16,162/35,381).
+
+### Shipped: v6 unary adaptation rate 1/16 (was 1/32)
+The per-pass entropy audit showed the unary quotient contexts carry ~0
+conditional structure but the adaptive model pays ~8% lag over the static
+optimum (model 24,089 vs ctx-entropy 22,286 bits at q50 on kodak01).
+BRUSHIE_UNARY_RATE knob A/B (fixed-q, 16 corpus images):
+rate 1/16: -0.83%/-0.68%/-0.44% at q30/50/75; rate 1/8: -0.85/-0.60/-0.15;
+rate 1/64: +1.5-2.6%. Gate-matched quick harness (1/16):
+**9,031 / 16,066 / 35,265 vs baseline 9,120 / 16,162 / 35,380
+= -0.98% / -0.59% / -0.33%** with 4/4 coverage everywhere. Shipped as stream
+v6 (default 1/16, BRUSHIE_UNARY_RATE=3..8 overrides); v5 and older streams
+keep 1/32 and decode unchanged. Verified: v5 stream decodes byte-identical
+with the v6 binary; 1500-iteration fuzz on v6 streams clean.
+
+### Rejected: mode 13 parent-block magnitude contexts (sig+unary by parent
+2x2 block max class, Rice stays local)
+Fixed-q 16-image sums: +2.75%..+3.05% vs mode 8 at q30/50/75. Per-pass audit
+(kodak01 q50): sig contexts +261 B (32-class dilution), unary -448 B, rem
++2,835 B when parent mean fed the Rice parameter (fixed to local Rice after
+the first audit); net still positive. Kept behind BRUSHIE_ENTROPY=13.
+
+### Rejected: mode 14 parent-block value prediction (zigzag residual vs
+parent 2x2 block mean + local residual Rice)
+Fixed-q 16-image sums: +13.8%..+16.2%. Parent block mean in child-quantized
+units correlates weakly with child magnitude (mean m=2.16 vs mean|res|=
+5.39 with p/1 predictor, 2.73 with p/2, 1.79 with p/4 on kodak01 q30-75;
+gradient-0 blocks mean m 1.7 vs gradient-8+ m 3.5-4.4), and the residual
+Rice scale inflates rem bits. Consistent with geom-lab's independent
+negative on inter-band value prediction. Kept behind BRUSHIE_ENTROPY=14.
+
+### Rejected: mode 15 AUREA-style energy-bucket significance contexts
+(|L|+|A|+|AL| linear buckets x parent gate; BRUSHIE_EBUCKETS=8/16/32)
+Fixed-q 16-image sums: +0.64%..+4.39% at every bucket count; the sum
+collapses the spatial pattern that the 3 binary neighbour flags encode.
+Kept behind BRUSHIE_ENTROPY=15.
+
+### Analysis shipped: per-pass entropy audit (scripts/entropy_audit.py)
+Extended to walk modes 13/14/15 and v6 shift rules, with per-pass
+(model/context/zero-order) entropy columns, plus BRUSHIE_AUDIT_STATS
+JSONL hook (parent block mean/class/gradients per significant coefficient).
+Findings on kodak01 detail bands: sig is the only pass with real context
+structure (ctx-entropy 99,859 vs zero-order 124,099 bits at q50, adaptive
+model tracks it within 0.3%); unary/rem/sign contexts carry ~nothing; the
+only modeling slack was the unary adaptation lag (now shipped as v6).
