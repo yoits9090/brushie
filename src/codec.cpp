@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <thread>
 
@@ -715,6 +716,21 @@ static std::int32_t median_predict(std::int32_t a, std::int32_t b,
   return a + b - c;
 }
 
+// Plane (bilinear-continuation) predictor: p = a + b - c, exact for linear
+// ramps. Mode 14 clamps to [min(a,b), max(a,b)] (LOCO-I style) to avoid
+// overshoot on edges; mode 13 leaves it unclamped (better on gradients).
+static std::int32_t plane_predict(std::int32_t a, std::int32_t b,
+                                  std::int32_t c, bool clamp) {
+  std::int32_t p = a + b - c;
+  if (clamp) {
+    const std::int32_t lo = std::min(a, b);
+    const std::int32_t hi = std::max(a, b);
+    if (p < lo) p = lo;
+    if (p > hi) p = hi;
+  }
+  return p;
+}
+
 // Gradient-adjusted predictor (CALIC GAP). Reads from the quantized band via
 // an accessor so encode (original values) and decode (reconstructed values)
 // observe the same causal neighbourhood.
@@ -975,6 +991,20 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
       while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
     }
   }
+  if (std::getenv("BRUSHIE_DEBUG_K0")) {
+    std::int64_t mn = 1 << 30, mx = -(1 << 30);
+    std::int64_t sum = 0;
+    std::uint64_t nzc = 0;
+    for (std::uint32_t i = 0; i < w * h; ++i) {
+      mn = std::min<std::int64_t>(mn, band[i]);
+      mx = std::max<std::int64_t>(mx, band[i]);
+      if (band[i] != 0) { nzc++; sum += band[i] < 0 ? -band[i] : band[i]; }
+    }
+    std::fprintf(stderr, "K0DBG mode=%u w=%u h=%u step? k0=%d mean|q|=%lld (%lld/%llu) min=%lld max=%lld\n",
+                 mode, w, h, k0, nzc ? sum / static_cast<std::int64_t>(nzc) : 0,
+                 static_cast<std::int64_t>(sum), static_cast<unsigned long long>(nzc),
+                 static_cast<long long>(mn), static_cast<long long>(mx));
+  }
   out.push_back(static_cast<std::uint8_t>(k0));
   RangeEncoder enc(out);
   BandProbs probs;
@@ -1066,15 +1096,147 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
     enc.flush();
     return;
   }
+  if (mode == 16) {
+    // Flat-block base mode (v6): the band is split into 4x4 blocks. A flat
+    // block (all 16 quantized values equal) codes one value (predicted from
+    // the left/above block); a non-flat block codes its coefficients with the
+    // median predictor as mode 3. Contexts: flags 0..3, block-value
+    // significance 4..7, coefficient significance 8..15, signs 16..19,
+    // unary 20..43, remainder 44..56.
+    const std::uint32_t kB16 = 4;
+    const std::uint32_t bw = (w + kB16 - 1) / kB16;
+    const std::uint32_t bh = (h + kB16 - 1) / kB16;
+    std::vector<std::uint8_t> flat(bw * bh, 0);
+    std::vector<std::int32_t> bval(bw * bh, 0);
+    std::vector<std::int32_t> bres(bw * bh, 0);
+    for (std::uint32_t by = 0; by < bh; ++by) {
+      for (std::uint32_t bx = 0; bx < bw; ++bx) {
+        const std::uint32_t y0 = by * kB16, x0 = bx * kB16;
+        const std::uint32_t y1 = std::min(h, y0 + kB16), x1 = std::min(w, x0 + kB16);
+        const std::int32_t v0 = band[static_cast<std::size_t>(y0) * w + x0];
+        bool is_flat = true;
+        for (std::uint32_t yy = y0; yy < y1 && is_flat; ++yy)
+          for (std::uint32_t xx = x0; xx < x1; ++xx)
+            if (band[static_cast<std::size_t>(yy) * w + xx] != v0) { is_flat = false; break; }
+        flat[by * bw + bx] = is_flat ? 1 : 0;
+        bval[by * bw + bx] = is_flat ? v0 : 0;
+      }
+    }
+    for (std::uint32_t by = 0; by < bh; ++by) {
+      for (std::uint32_t bx = 0; bx < bw; ++bx) {
+        unsigned fctx = 0;
+        if (bx > 0 && flat[by * bw + bx - 1]) fctx += 1;
+        if (by > 0 && flat[(by - 1) * bw + bx]) fctx += 2;
+        enc.encode_bit(probs.p[fctx], flat[by * bw + bx] ? 1u : 0u);
+      }
+    }
+    std::uint64_t v_mag_sum = 0;
+    unsigned v_mag_count = 0;
+    int vk = 0;
+    for (std::uint32_t by = 0; by < bh; ++by) {
+      for (std::uint32_t bx = 0; bx < bw; ++bx) {
+        const std::uint32_t idx = by * bw + bx;
+        const std::uint32_t y0 = by * kB16, x0 = bx * kB16;
+        const std::uint32_t y1 = std::min(h, y0 + kB16), x1 = std::min(w, x0 + kB16);
+        if (flat[idx]) {
+          std::int32_t pv = 0;
+          if (bx > 0 && flat[idx - 1]) pv = bval[idx - 1];
+          else if (by > 0 && flat[idx - bw]) pv = bval[idx - bw];
+          std::int32_t rv = bval[idx] - pv;
+          bres[idx] = rv;
+          const std::int32_t lr = (bx > 0 && flat[idx - 1]) ? bres[idx - 1] : 0;
+          const std::int32_t ar = (by > 0 && flat[idx - bw]) ? bres[idx - bw] : 0;
+          const unsigned vctx = 4u + (lr != 0 ? 1u : 0u) + (ar != 0 ? 2u : 0u);
+          const std::uint32_t s = (rv != 0) ? 1u : 0u;
+          enc.encode_bit(probs.p[vctx], s);
+          if (s) {
+            const unsigned sign = rv < 0 ? 1u : 0u;
+            unsigned sctx = 57u;
+            if (lr < 0) sctx += 1;
+            if (ar < 0) sctx += 2;
+            enc.encode_bit(probs.p[sctx], sign);
+            const std::uint32_t m_orig = static_cast<std::uint32_t>(rv < 0 ? -rv : rv) - 1u;
+            const std::uint32_t mean1 = (static_cast<std::uint32_t>(lr < 0 ? -lr : lr) +
+                                         static_cast<std::uint32_t>(ar < 0 ? -ar : ar)) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            const int kk = std::max(nk, vk);
+            const std::uint32_t qq = m_orig >> kk;
+            const std::uint32_t rr = m_orig & ((1u << kk) - 1u);
+            for (std::uint32_t i = 0; i < qq; ++i)
+              enc.encode_bit(probs.p[20u + std::min<std::uint32_t>(i, 23u)], 0);
+            enc.encode_bit(probs.p[20u + std::min<std::uint32_t>(qq, 23u)], 1);
+            for (unsigned i = 0; i < static_cast<unsigned>(kk); ++i)
+              enc.encode_bit(probs.p[44u + i], (rr >> i) & 1u);
+            v_mag_sum += m_orig;
+            if (++v_mag_count == 32) {
+              const std::uint64_t v2 = v_mag_sum / 32;
+              int nk2 = 0;
+              while (nk2 < 12 && (std::uint64_t{1} << (nk2 + 1)) <= v2) ++nk2;
+              vk = nk2;
+              v_mag_sum = 0;
+              v_mag_count = 0;
+            }
+          }
+          continue;
+        }
+        for (std::uint32_t yy = y0; yy < y1; ++yy) {
+          for (std::uint32_t xx = x0; xx < x1; ++xx) {
+            std::int32_t q = band[static_cast<std::size_t>(yy) * w + xx];
+            const std::int32_t a = xx > 0 ? band[static_cast<std::size_t>(yy) * w + xx - 1] : 0;
+            const std::int32_t b = yy > 0 ? band[static_cast<std::size_t>(yy - 1) * w + xx] : 0;
+            const std::int32_t c = (xx > 0 && yy > 0) ? band[static_cast<std::size_t>(yy - 1) * w + xx - 1] : 0;
+            const std::int32_t p = (yy == 0) ? a : (xx == 0 ? b : median_predict(a, b, c));
+            q -= p;
+            const unsigned ctx = 8u + sig_context(band, w, xx, yy);
+            const std::uint32_t s = (q != 0) ? 1u : 0u;
+            enc.encode_bit(probs.p[ctx], s);
+            if (s) {
+              const std::uint32_t sign = q < 0 ? 1u : 0u;
+              const unsigned sign_ctx = 16u + sign_context(band, w, xx, yy);
+              enc.encode_bit(probs.p[sign_ctx], sign);
+              const std::uint32_t m_orig = static_cast<std::uint32_t>(q < 0 ? -q : q) - 1u;
+              const std::uint32_t qq = m_orig >> k;
+              const std::uint32_t rr = m_orig & ((1u << k) - 1u);
+              for (std::uint32_t i = 0; i < qq; ++i)
+                enc.encode_bit(probs.p[20u + std::min<std::uint32_t>(i, 23u)], 0);
+              enc.encode_bit(probs.p[20u + std::min<std::uint32_t>(qq, 23u)], 1);
+              for (unsigned i = 0; i < static_cast<unsigned>(k); ++i)
+                enc.encode_bit(probs.p[44u + i], (rr >> i) & 1u);
+              mag_sum += m_orig;
+              if (++mag_count == 64) {
+                const std::uint64_t v = mag_sum / 64;
+                int nk = 0;
+                while (nk < 12 && (std::uint64_t{1} << (nk + 1)) <= v) ++nk;
+                k = nk;
+                mag_sum = 0;
+                mag_count = 0;
+              }
+            }
+          }
+        }
+      }
+    }
+    enc.flush();
+    return;
+  }
   for (std::uint32_t y = 0; y < h; ++y) {
     for (std::uint32_t x = 0; x < w; ++x) {
       std::int32_t q = band[static_cast<std::size_t>(y) * w + x];
       if (use_prediction) {
-        const std::int32_t p = (mode == 7) ? gap_predict(band, w, x, y)
-                                           : median_predict(
-                                                 x > 0 ? band[static_cast<std::size_t>(y) * w + x - 1] : 0,
-                                                 y > 0 ? band[static_cast<std::size_t>(y - 1) * w + x] : 0,
-                                                 (x > 0 && y > 0) ? band[static_cast<std::size_t>(y - 1) * w + x - 1] : 0);
+        const std::int32_t a = x > 0 ? band[static_cast<std::size_t>(y) * w + x - 1] : 0;
+        const std::int32_t b = y > 0 ? band[static_cast<std::size_t>(y - 1) * w + x] : 0;
+        const std::int32_t c = (x > 0 && y > 0) ? band[static_cast<std::size_t>(y - 1) * w + x - 1] : 0;
+        std::int32_t p;
+        if (mode == 7) {
+          p = gap_predict(band, w, x, y);
+        } else if (mode == 13) {
+          p = (y == 0) ? a : (x == 0 ? b : plane_predict(a, b, c, false));
+        } else if (mode == 14) {
+          p = (y == 0) ? a : (x == 0 ? b : plane_predict(a, b, c, true));
+        } else {
+          p = median_predict(a, b, c);
+        }
         q -= p;
       }
       const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
@@ -1385,6 +1547,142 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
     }
     return true;
   }
+  if (mode == 16) {
+    // Flat-block base mode (v6) decode; mirror of the encoder layout.
+    const std::uint32_t kB16 = 4;
+    const std::uint32_t bw = (tw + kB16 - 1) / kB16;
+    const std::uint32_t bh = (th + kB16 - 1) / kB16;
+    std::vector<std::uint8_t> flat(bw * bh, 0);
+    std::vector<std::int32_t> bval(bw * bh, 0);
+    std::vector<std::int32_t> bres(bw * bh, 0);
+    for (std::uint32_t by = 0; by < bh; ++by) {
+      for (std::uint32_t bx = 0; bx < bw; ++bx) {
+        unsigned fctx = 0;
+        if (bx > 0 && flat[by * bw + bx - 1]) fctx += 1;
+        if (by > 0 && flat[(by - 1) * bw + bx]) fctx += 2;
+        flat[by * bw + bx] = dec.decode_bit(probs.p[fctx]) ? 1 : 0;
+      }
+    }
+    std::uint64_t v_mag_sum = 0;
+    unsigned v_mag_count = 0;
+    int vk = 0;
+    for (std::uint32_t by = 0; by < bh; ++by) {
+      for (std::uint32_t bx = 0; bx < bw; ++bx) {
+        const std::uint32_t idx = by * bw + bx;
+        const std::uint32_t y0 = by * kB16, x0 = bx * kB16;
+        const std::uint32_t y1 = std::min(th, y0 + kB16), x1 = std::min(tw, x0 + kB16);
+        if (flat[idx]) {
+          std::int32_t pv = 0;
+          if (bx > 0 && flat[idx - 1]) pv = bval[idx - 1];
+          else if (by > 0 && flat[idx - bw]) pv = bval[idx - bw];
+          const std::int32_t lr = (bx > 0 && flat[idx - 1]) ? bres[idx - 1] : 0;
+          const std::int32_t ar = (by > 0 && flat[idx - bw]) ? bres[idx - bw] : 0;
+          const unsigned vctx = 4u + (lr != 0 ? 1u : 0u) + (ar != 0 ? 2u : 0u);
+          std::int32_t rv = 0;
+          if (dec.decode_bit(probs.p[vctx])) {
+            unsigned sctx = 57u;
+            if (lr < 0) sctx += 1;
+            if (ar < 0) sctx += 2;
+            const std::uint32_t sign = dec.decode_bit(probs.p[sctx]);
+            const std::uint32_t mean1 = (static_cast<std::uint32_t>(lr < 0 ? -lr : lr) +
+                                         static_cast<std::uint32_t>(ar < 0 ? -ar : ar)) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            const int kk = std::max(nk, vk);
+            std::uint32_t qq = 0;
+            for (;;) {
+              const std::uint32_t bit = dec.decode_bit(probs.p[20u + std::min<std::uint32_t>(qq, 23u)]);
+              if (bit) break;
+              ++qq;
+              if (qq > 65536u) {
+                fail(error, "arithmetic magnitude overflow");
+                return false;
+              }
+            }
+            std::uint32_t m = qq << kk;
+            for (unsigned i = 0; i < static_cast<unsigned>(kk); ++i)
+              m |= dec.decode_bit(probs.p[44u + i]) << i;
+            rv = static_cast<std::int32_t>(m) + 1;
+            if (sign) rv = -rv;
+            v_mag_sum += m;
+            if (++v_mag_count == 32) {
+              const std::uint64_t v2 = v_mag_sum / 32;
+              int nk2 = 0;
+              while (nk2 < 12 && (std::uint64_t{1} << (nk2 + 1)) <= v2) ++nk2;
+              vk = nk2;
+              v_mag_sum = 0;
+              v_mag_count = 0;
+            }
+          }
+          bres[idx] = rv;
+          bval[idx] = pv + rv;
+          for (std::uint32_t yy = y0; yy < y1; ++yy)
+            for (std::uint32_t xx = x0; xx < x1; ++xx)
+              dest[static_cast<std::size_t>(yy) * stride + xx] = bval[idx];
+          continue;
+        }
+        for (std::uint32_t yy = y0; yy < y1; ++yy) {
+          for (std::uint32_t xx = x0; xx < x1; ++xx) {
+            const unsigned raw_ctx = sig_context(dest, stride, xx, yy);
+            const std::uint32_t s = dec.decode_bit(probs.p[8u + raw_ctx]);
+            std::int32_t q = 0;
+            if (s) {
+              const std::uint32_t sign = dec.decode_bit(probs.p[16u + sign_context(dest, stride, xx, yy)]);
+              std::uint32_t qq = 0;
+              for (;;) {
+                const std::uint32_t bit = dec.decode_bit(probs.p[20u + std::min<std::uint32_t>(qq, 23u)]);
+                if (bit) break;
+                ++qq;
+                if (qq > 65536u) {
+                  fail(error, "arithmetic magnitude overflow");
+                  return false;
+                }
+              }
+              std::uint32_t m = qq << k;
+              for (unsigned i = 0; i < static_cast<unsigned>(k); ++i)
+                m |= dec.decode_bit(probs.p[44u + i]) << i;
+              q = static_cast<std::int32_t>(m) + 1;
+              if (sign) q = -q;
+              mag_sum += m;
+              if (++mag_count == 64) {
+                const std::uint64_t v = mag_sum / 64;
+                int nk = 0;
+                while (nk < 12 && (std::uint64_t{1} << (nk + 1)) <= v) ++nk;
+                k = nk;
+                mag_sum = 0;
+                mag_count = 0;
+              }
+            }
+            const std::int32_t a = xx > 0 ? dest[static_cast<std::size_t>(yy) * stride + xx - 1] : 0;
+            const std::int32_t b = yy > 0 ? dest[static_cast<std::size_t>(yy - 1) * stride + xx] : 0;
+            const std::int32_t c = (xx > 0 && yy > 0) ? dest[static_cast<std::size_t>(yy - 1) * stride + xx - 1] : 0;
+            const std::int32_t p = (yy == 0) ? a : (xx == 0 ? b : median_predict(a, b, c));
+            q += p;
+            dest[static_cast<std::size_t>(yy) * stride + xx] = q;
+          }
+        }
+      }
+    }
+    if (dec.truncated()) {
+      fail(error, "truncated arithmetic band payload");
+      return false;
+    }
+    if (dec.position() != size - 1) {
+      fail(error, "arithmetic band payload size mismatch");
+      return false;
+    }
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const std::int64_t q = dest[i];
+      const std::int64_t value = q * step;
+      if (value < std::numeric_limits<std::int32_t>::min() ||
+          value > std::numeric_limits<std::int32_t>::max()) {
+        fail(error, "arithmetic coefficient overflow");
+        return false;
+      }
+      dest[i] = static_cast<std::int32_t>(value);
+    }
+    return true;
+  }
   for (std::uint32_t y = 0; y < th; ++y) {
     for (std::uint32_t x = 0; x < tw; ++x) {
       const std::int32_t pv = parent_at(parent, parent_stride, parent_w,
@@ -1532,11 +1830,19 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         }
       }
       if (use_prediction) {
-        const std::int32_t p = (mode == 7) ? gap_predict(dest, stride, x, y)
-                                           : median_predict(
-                                                 x > 0 ? dest[static_cast<std::size_t>(y) * stride + x - 1] : 0,
-                                                 y > 0 ? dest[static_cast<std::size_t>(y - 1) * stride + x] : 0,
-                                                 (x > 0 && y > 0) ? dest[static_cast<std::size_t>(y - 1) * stride + x - 1] : 0);
+        const std::int32_t a = x > 0 ? dest[static_cast<std::size_t>(y) * stride + x - 1] : 0;
+        const std::int32_t b = y > 0 ? dest[static_cast<std::size_t>(y - 1) * stride + x] : 0;
+        const std::int32_t c = (x > 0 && y > 0) ? dest[static_cast<std::size_t>(y - 1) * stride + x - 1] : 0;
+        std::int32_t p;
+        if (mode == 7) {
+          p = gap_predict(dest, stride, x, y);
+        } else if (mode == 13) {
+          p = (y == 0) ? a : (x == 0 ? b : plane_predict(a, b, c, false));
+        } else if (mode == 14) {
+          p = (y == 0) ? a : (x == 0 ? b : plane_predict(a, b, c, true));
+        } else {
+          p = median_predict(a, b, c);
+        }
         q += p;
       }
       dest[static_cast<std::size_t>(y) * stride + x] = q;
@@ -2271,11 +2577,33 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     c.w = static_cast<std::uint16_t>(refs[i].w);
     c.h = static_cast<std::uint16_t>(refs[i].h);
     c.step = chosen_step[i];
-    c.mode = refs[i].layer == 0 ? (use_gap ? 7 : 3) : detail_mode;
+    static const std::uint8_t base_mode_env = []() {
+      const char* e = std::getenv("BRUSHIE_BASE");
+      if (!e) return static_cast<std::uint8_t>(3);
+      const int v = std::atoi(e);
+      return (v == 7 || v == 13 || v == 14 || v == 16) ? static_cast<std::uint8_t>(v)
+                                            : static_cast<std::uint8_t>(3);
+    }();
+    static const std::uint8_t base_mode_chroma = []() {
+      const char* e = std::getenv("BRUSHIE_BASE_CHROMA");
+      if (!e) return static_cast<std::uint8_t>(0);
+      const int v = std::atoi(e);
+      return (v == 3 || v == 7 || v == 13 || v == 14 || v == 16) ? static_cast<std::uint8_t>(v)
+                                                      : static_cast<std::uint8_t>(0);
+    }();
+    const std::uint8_t base_mode = (refs[i].channel == 1 || refs[i].channel == 2)
+                                       ? (base_mode_chroma ? base_mode_chroma
+                                                           : (use_gap ? 7 : base_mode_env))
+                                       : (use_gap ? 7 : base_mode_env);
+    // Base chunks: BRUSHIE_BASE overrides force one mode; otherwise trial-encode
+    // median (3) vs flat-block (16) and keep the smaller payload. Both modes
+    // reconstruct the identical quantized band, so this is pure byte selection.
+    c.mode = refs[i].layer == 0 ? base_mode : detail_mode;
     // Per-band block mode: 16x16 block flags pay off when the band is
     // block-sparse (synthetic/flat content), and are pure overhead on dense
     // photo bands.
-    if (c.mode != 3 && c.mode != 7 && refs[i].w >= 16 && refs[i].h >= 16) {
+    if (c.mode != 3 && c.mode != 7 && c.mode != 13 && c.mode != 14 &&
+        c.mode != 16 && refs[i].w >= 16 && refs[i].h >= 16) {
       static const std::uint32_t kB = []() {
         const char* e = std::getenv("BRUSHIE_BLOCK");
         if (!e) return 16u;
@@ -2310,12 +2638,113 @@ bool encode(const ImageView& image, const EncodeOptions& options,
       parent = quant[pi].data();
       parent_stride = refs[pi].w;
     }
-    encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
-                      as_list[i], parent, parent_stride,
-                      r.layer > 0 ? refs[parent_of(i)].w : 0,
-                      r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode,
-                      chosen_step[i],
-                      r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
+    // Grain probe (M6): BRUSHIE_GRAIN_ZERO=<maxq>,<minlag>: zero noise-like
+    // 8x8 blocks in the finest luma detail level before coding. Purely
+    // experimental; the zeroed coefficients are simply not coded.
+    static const bool grain_probe = []() {
+      const char* e = std::getenv("BRUSHIE_GRAIN_ZERO");
+      return e && *e;
+    }();
+    if (grain_probe && r.channel == 0 && r.layer == static_cast<std::uint32_t>(pyr0.levels.size())) {
+      const char* e = std::getenv("BRUSHIE_GRAIN_ZERO");
+      double gmaxq = 1.0, gminlag = 0.15;
+      if (e && *e) {
+        const char* comma = std::strchr(e, ',');
+        gmaxq = std::atof(e);
+        if (comma && comma[1]) gminlag = std::atof(comma + 1);
+      }
+      const std::uint32_t kB8 = 8;
+      const std::uint32_t gbw = (r.w + kB8 - 1) / kB8;
+      const std::uint32_t gbh = (r.h + kB8 - 1) / kB8;
+      for (std::uint32_t by = 0; by < gbh; ++by) {
+        for (std::uint32_t bx = 0; bx < gbw; ++bx) {
+          const std::uint32_t y0 = by * kB8, x0 = bx * kB8;
+          const std::uint32_t y1 = std::min(r.h, y0 + kB8), x1 = std::min(r.w, x0 + kB8);
+          bool ok = true;
+          std::int64_t sum = 0;
+          unsigned cnt = 0;
+          unsigned nz = 0;
+          for (std::uint32_t yy = y0; yy < y1 && ok; ++yy)
+            for (std::uint32_t xx = x0; xx < x1; ++xx) {
+              const std::int32_t v = quant[i][static_cast<std::size_t>(yy) * r.w + xx];
+              if (v > static_cast<std::int32_t>(gmaxq) || v < -static_cast<std::int32_t>(gmaxq)) { ok = false; break; }
+              sum += v;
+              ++cnt;
+              if (v != 0) ++nz;
+            }
+          if (!ok) continue;
+          // significance-map lag-1 autocorrelation (x and y)
+          auto lag1 = [&](bool horiz) -> double {
+            std::int64_t s00 = 0, s01 = 0;
+            unsigned n = 0;
+            for (std::uint32_t yy = y0; yy < y1; ++yy) {
+              for (std::uint32_t xx = x0; xx < x1; ++xx) {
+                const std::int32_t v = quant[i][static_cast<std::size_t>(yy) * r.w + xx] != 0 ? 1 : 0;
+                std::int32_t vn = 0;
+                if (horiz) {
+                  if (xx + 1 < x1) vn = quant[i][static_cast<std::size_t>(yy) * r.w + xx + 1] != 0 ? 1 : 0;
+                  else continue;
+                } else {
+                  if (yy + 1 < y1) vn = quant[i][static_cast<std::size_t>(yy + 1) * r.w + xx] != 0 ? 1 : 0;
+                  else continue;
+                }
+                s00 += v * vn;
+                s01 += v;
+                ++n;
+              }
+            }
+            if (!n) return 1.0;
+            const double m1 = static_cast<double>(s01) / n;
+            const double m2 = m1;  // symmetric
+            const double cov = static_cast<double>(s00) / n - m1 * m2;
+            const double vv = m1 * (1.0 - m1);
+            if (vv <= 0) return 0.0;
+            return cov / vv;
+          };
+          const double lx = lag1(true), ly = lag1(false);
+          const double meanq = cnt ? static_cast<double>(sum) / cnt : 0.0;
+          if (lx > gminlag || ly > gminlag || std::abs(meanq) > 0.5) continue;
+          for (std::uint32_t yy = y0; yy < y1; ++yy)
+            for (std::uint32_t xx = x0; xx < x1; ++xx)
+              quant[i][static_cast<std::size_t>(yy) * r.w + xx] = 0;
+        }
+      }
+      // recompute nz/as for the final encode
+      std::uint64_t nz2 = 0, as2 = 0;
+      for (const std::int32_t v : quant[i])
+        if (v != 0) {
+          ++nz2;
+          as2 += static_cast<std::uint64_t>(v < 0 ? -v : v);
+        }
+      nz_list[i] = nz2;
+      as_list[i] = as2;
+      band_active[i] = nz2 != 0 ? 1 : 0;
+      if (!band_active[i]) continue;
+    }
+    const bool base_trial =
+        r.layer == 0 && !use_gap && base_mode_env == 3 && base_mode_chroma == 0;
+    if (base_trial) {
+      std::vector<std::uint8_t> p3, p16;
+      encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
+                        as_list[i], parent, parent_stride, 0, 0, 3,
+                        chosen_step[i], 1, p3);
+      encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
+                        as_list[i], parent, parent_stride, 0, 0, 16,
+                        chosen_step[i], 1, p16);
+      if (p16.size() < p3.size()) {
+        c.mode = 16;
+        payload = std::move(p16);
+      } else {
+        payload = std::move(p3);
+      }
+    } else {
+      encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
+                        as_list[i], parent, parent_stride,
+                        r.layer > 0 ? refs[parent_of(i)].w : 0,
+                        r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode,
+                        chosen_step[i],
+                        r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
+    }
     c.payload = std::move(payload);
     active[i] = 1;
     nonzero += nz_list[i];
@@ -2346,7 +2775,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
         if (cj.band == 3) d = &cj;
         if (v && d) break;
       }
-      if (v && d) {
+      if (v || d) {
         Chunk m;
         m.layer = c.layer;
         m.band = 4;
@@ -2359,21 +2788,24 @@ bool encode(const ImageView& image, const EncodeOptions& options,
         m.mode = 4;
         m.count = 0;
         // payload = stepD(u16) + modeH + modeV + modeD + sizeH(u32) +
-        //           sizeV(u32) + H + V + D streams (D size = payload tail)
+        //           sizeV(u32) + H + V + D streams (D size = payload tail).
+        // A mode byte of 0 marks an absent section (band left zero at
+        // decode), so H/V pairs merge even when the D band is empty.
         m.payload.resize(13, 0);
-        put_u16(m.payload, 0, d->step);
+        put_u16(m.payload, 0, d ? d->step : 0);
         m.payload[2] = c.mode;
-        m.payload[3] = v->mode;
-        m.payload[4] = d->mode;
+        m.payload[3] = v ? v->mode : 0;
+        m.payload[4] = d ? d->mode : 0;
         put_u32(m.payload, 5, static_cast<std::uint32_t>(c.payload.size()));
-        put_u32(m.payload, 9, static_cast<std::uint32_t>(v->payload.size()));
-        m.payload.reserve(13 + c.payload.size() + v->payload.size() + d->payload.size());
+        put_u32(m.payload, 9, static_cast<std::uint32_t>(v ? v->payload.size() : 0));
+        m.payload.reserve(13 + c.payload.size() + (v ? v->payload.size() : 0) +
+                          (d ? d->payload.size() : 0));
         m.payload.insert(m.payload.end(), c.payload.begin(), c.payload.end());
-        m.payload.insert(m.payload.end(), v->payload.begin(), v->payload.end());
-        m.payload.insert(m.payload.end(), d->payload.begin(), d->payload.end());
+        if (v) m.payload.insert(m.payload.end(), v->payload.begin(), v->payload.end());
+        if (d) m.payload.insert(m.payload.end(), d->payload.begin(), d->payload.end());
         m.checksum = 0;
         ordered.push_back(std::move(m));
-        // mark V and D consumed
+        // mark V and D consumed (if included)
         for (std::size_t j = i + 1; j < refs.size(); ++j)
           if (active[j] && chunks[j].layer == c.layer && chunks[j].channel == c.channel &&
               (chunks[j].band == 2 || chunks[j].band == 3))
@@ -2699,7 +3131,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     expected_payload_offset = offset + payload_size;
-    if (channel >= channels || band > 4 || mode < 3 || mode > 15 || step == 0 ||
+    if (channel >= channels || band > 4 || mode < 3 || mode > 16 || step == 0 ||
         ((tw == 0 || th == 0) && band != 4) || (band == 4 && (tw != 0 || th != 0)) ||
         count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
@@ -2802,9 +3234,17 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         const std::uint8_t mode_d = payload[4];
         const std::uint32_t size_h = get_u32(payload + 5);
         const std::uint32_t size_v = get_u32(payload + 9);
-        if (mode_h < 3 || mode_h > 15 || mode_v < 3 || mode_v > 15 ||
-            mode_d < 3 || mode_d > 15 || step_d == 0) {
+        auto merged_mode_ok = [](std::uint8_t m) {
+          return m == 0 || (m >= 3 && m <= 16);
+        };
+        if (!merged_mode_ok(mode_h) || !merged_mode_ok(mode_v) ||
+            !merged_mode_ok(mode_d)) {
           fail(error, "invalid merged band metadata");
+          return false;
+        }
+        if (mode_h == 0 || (mode_v == 0 && size_v != 0) ||
+            (mode_d == 0 && step_d != 0)) {
+          fail(error, "absent merged band section markers");
           return false;
         }
         const std::uint32_t off = 13;
@@ -2820,6 +3260,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         const std::uint8_t modes[3] = {mode_h, mode_v, mode_d};
         std::uint32_t cursor = off;
         for (int bi = 0; bi < 3; ++bi) {
+          if (modes[bi] == 0) continue;  // absent section: band stays zero
           const std::uint32_t sec_size = bi < 2 ? (bi == 0 ? size_h : size_v)
                                                 : (payload_size - cursor);
           if (cursor + sec_size > payload_size) {
@@ -2855,6 +3296,10 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
           }
           cursor += sec_size;
         }
+        if (mode_d == 0 && cursor != payload_size) {
+          fail(error, "merged band trailing bytes with absent D section");
+          return false;
+        }
       } else {
         if (!decode_band_arith(payload, payload_size, count, step, band == 0,
                                destination, stride, tw, th, &derr, parent,
@@ -2886,6 +3331,60 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
   if (highest_layer >= static_cast<int>(levels) && expected_payload_offset != size) {
     fail(error, "trailing or missing CAPS payload bytes");
     return false;
+  }
+  // Debug: BRUSHIE_DUMP_BANDS=dir writes every decoded band (reconstructed
+  // values, q*step) with explicit layer/band/channel names + a steps.txt.
+  static const char* dump_dir = std::getenv("BRUSHIE_DUMP_BANDS");
+  if (dump_dir && *dump_dir) {
+    auto dump_band = [&](const char* name, const std::vector<std::int32_t>& v,
+                         std::uint32_t bw, std::uint32_t bh, std::uint32_t st) {
+      char path[512];
+      std::snprintf(path, sizeof(path), "%s/%s_%ux%u_s%u.raw", dump_dir, name, bw, bh, st);
+      std::ofstream f(path, std::ios::binary | std::ios::trunc);
+      if (f) {
+        const std::size_t n = static_cast<std::size_t>(bw) * bh;
+        for (std::size_t i = 0; i < n; ++i) {
+          const std::int32_t q = v[i];
+          f.write(reinterpret_cast<const char*>(&q), sizeof(q));
+        }
+      }
+    };
+    for (std::uint32_t ri = 0; ri < shapes0.size(); ++ri) {
+      const BandLevel& lev = shapes0[ri];
+      const std::uint32_t layer = static_cast<std::uint32_t>(shapes0.size()) - ri;
+      char name[32];
+      std::snprintf(name, sizeof(name), "l%u_b1_c0", layer);
+      dump_band(name, lev.detail[0], lev.w / 2, lev.lh, 0);
+      std::snprintf(name, sizeof(name), "l%u_b2_c0", layer);
+      dump_band(name, lev.detail[1], lev.lw, lev.h / 2, 0);
+      std::snprintf(name, sizeof(name), "l%u_b3_c0", layer);
+      dump_band(name, lev.detail[2], lev.w / 2, lev.h / 2, 0);
+    }
+    dump_band("l0_b0_c0", base[0], base_w, base_h, 0);
+    for (std::uint32_t ri = 0; ri < shapes1.size(); ++ri) {
+      const BandLevel& lev = shapes1[ri];
+      const std::uint32_t layer = static_cast<std::uint32_t>(shapes1.size()) - ri;
+      char name[32];
+      std::snprintf(name, sizeof(name), "l%u_b1_c1", layer);
+      dump_band(name, lev.detail[0], lev.w / 2, lev.lh, 0);
+      std::snprintf(name, sizeof(name), "l%u_b2_c1", layer);
+      dump_band(name, lev.detail[1], lev.lw, lev.h / 2, 0);
+      std::snprintf(name, sizeof(name), "l%u_b3_c1", layer);
+      dump_band(name, lev.detail[2], lev.w / 2, lev.h / 2, 0);
+    }
+    dump_band("l0_b0_c1", base[1], ch_base_w, ch_base_h, 0);
+    for (std::uint32_t ri = 0; ri < shapes2.size(); ++ri) {
+      const BandLevel& lev = shapes2[ri];
+      const std::uint32_t layer = static_cast<std::uint32_t>(shapes2.size()) - ri;
+      char name[32];
+      std::snprintf(name, sizeof(name), "l%u_b1_c2", layer);
+      dump_band(name, lev.detail[0], lev.w / 2, lev.lh, 0);
+      std::snprintf(name, sizeof(name), "l%u_b2_c2", layer);
+      dump_band(name, lev.detail[1], lev.lw, lev.h / 2, 0);
+      std::snprintf(name, sizeof(name), "l%u_b3_c2", layer);
+      dump_band(name, lev.detail[2], lev.w / 2, lev.h / 2, 0);
+    }
+    dump_band("l0_b0_c2", base[2], ch_base_w, ch_base_h, 0);
   }
   BRUSHIE_TRACK_SCOPE("decode", "synthesize");
   std::array<std::vector<std::int32_t>, 4> rec;
