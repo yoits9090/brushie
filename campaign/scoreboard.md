@@ -41,6 +41,20 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
   Next: RDOQ under real metrics, overfitting analysis.
 - speed-lab (branch lab/speed): per-thread hotmap done; SIMD/parallel next.
 
+## Metric-lab M8 verdicts (2026-08-14, 78,566 candidates)
+- MS-SSIM-tuned production selection is INVALID under real metrics: clears
+  S2-85 on 6/163, S2-90 on 2/163, BA-0.6 on 3/163; +25..84% bytes where it
+  clears. Real-metric re-selection wins -1.9%..-16.5% (S2-85 -11.8%,
+  BA-0.9 -16.5%, BA-1.3 -11.9%).
+- BRUSHIE_RDO still loses (+0.9..12.6%): sens table is proxy-fitted.
+- M3 activity quantization re-rejected under S2 (v6 probe): +0.6..74.4%.
+  Closed for good.
+- Per-band STEPMUL pilot under SSIMULACRA2: -8.1% at S2-85 vs plain grid;
+  winning pattern OPPOSITE of proxy-tuned table (coarser coarse layers,
+  finer finest layers). Full-corpus sweep running. => quant-table retune
+  against real metrics = ~8-16% free at high gates (coder-lab implements).
+- Blind 2AFC rig built (scripts/blind_test_rig.py, 12 imgs x 6 codecs).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
