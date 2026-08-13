@@ -21,11 +21,19 @@ J2K 12,744 / 23,960 / 57,501. CAPS: 4/4 and 163/163 coverage everywhere.
 - benchmarks/competitors/ has cached AVIF/WebP/JPEG/J2K candidate rows (read-only).
 
 ## Boxes (Colab CLI CPU VMs, Ubuntu 22.04, 2 vCPU / 12GB)
-- `ssh colab-lab` and `ssh colab-sweep` (ProxyCommand via `colab ssh`).
-- Box repo: /content/brushie (built binary /content/brushie/build/brushie).
-- Session management only via: `colab --auth adc sessions|status|stop <name>`.
-  NEVER `colab stop` a session another lab uses. Heavy parallel sweeps ->
-  `colab run` ephemeral VMs (self-cleaning) or local ProcessPool (10-core Mac).
+- Boxes are DISPOSABLE and shared. Current: `brushie-sweep` (orchestrator,
+  /content/brushie + /content/labs/<lab> slots). The account allows AT MOST 3
+  concurrent VMs; check with `colab --auth adc sessions` before creating any
+  (ft-node-1/2 are lab-owned). Never `colab stop` another lab's session.
+- VMs can die at any time (keep-alive DNS blips, 24h caps) - nothing on them
+  is durable. Re-provision: box/setup.sh, then
+  `git archive <branch> | ssh colab-sweep "tar x -C /content/labs/<lab>"` +
+  rebuild with clang++ (see box/build.sh). Datasets: /content/brushie/datasets
+  (symlink into your slot).
+- ssh config already carries `colab --auth adc ssh --proxy-mode` - ssh will
+  auto-create a missing session headlessly (subject to the 3-VM limit).
+- Heavy parallel sweeps -> local ProcessPool (10-core Mac) first; box only
+  for x86 builds, valgrind/callgrind, strace, cross-platform checks.
 - Sync your branch to your box slot:
   `git archive <branch> | ssh <box> "mkdir -p /content/labs/<lab> && tar x -C /content/labs/<lab>"`
   then build there with clang++ (see box/build.sh). Datasets live on the box at
