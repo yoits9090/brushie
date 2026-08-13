@@ -10,6 +10,7 @@ import json, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+os.environ.pop("MPLBACKEND", None)  # kernel leaks module://matplotlib_inline; Agg required
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -134,6 +135,48 @@ def render():
             title += f" | CAPS enc {sp.get('encode_ms', '?')}ms / dec {sp.get('decode_ms', '?')}ms"
         ax3.set_title(title, fontsize=11)
 
+    # Honest-metric panel: CAPS vs best-per-gate on SSIMULACRA2/Butteraugli.
+    honest_path = ROOT / "dash" / "honest.json"
+    if broad is not None and honest_path.exists():
+        honest = json.loads(honest_path.read_text())
+        metrics = honest.get("metrics", {})
+        if metrics:
+            fig2 = plt.figure(figsize=(17, 6.5))
+            s2 = [k for k in metrics if k.startswith("ssimulacra2")]
+            ba = [k for k in metrics if k.startswith("butteraugli")]
+            for pi, group in enumerate([s2, ba]):
+                axh = fig2.add_subplot(1, 2, pi + 1)
+                gates = group
+                xs = np.arange(len(gates))
+                codecs = ["CAPS", "JPEG XL", "AVIF", "WebP", "JPEG"]
+                ccolors = {"CAPS": "#2ca02c", "JPEG XL": "#9467bd", "AVIF": "#1f77b4",
+                           "WebP": "#ff7f0e", "JPEG": "#7f7f7f"}
+                width = 0.15
+                for j, codec in enumerate(codecs):
+                    vals = []
+                    for g in gates:
+                        e = metrics[g].get(codec)
+                        vals.append(e["mean_bytes"] if e else 0)
+                    axh.bar(xs + (j - 2) * width, vals, width, label=codec,
+                            color=ccolors[codec], alpha=0.85)
+                axh.set_yscale("log")
+                axh.set_xticks(xs)
+                axh.set_xticklabels([g.split()[-1] for g in gates])
+                axh.set_xlabel("gate (higher = better)" if pi == 0 else "gate (lower = better)")
+                axh.set_ylabel("mean bytes (log)")
+                axh.set_title(("SSIMULACRA2 gates (163 imgs, real metric)" if pi == 0
+                               else "Butteraugli 3-norm gates (163 imgs, real metric)"), fontsize=11)
+                axh.legend(loc="upper left", fontsize=8, ncol=5)
+                axh.grid(True, which="both", alpha=0.25)
+                for j, g in enumerate(gates):
+                    caps_e = metrics[g].get("CAPS")
+                    if caps_e:
+                        axh.text(j - 2 * width, caps_e["mean_bytes"] * 1.15,
+                                 f"{caps_e['mean_bytes']:,}", ha="center",
+                                 fontsize=7.5, color="#2ca02c", fontweight="bold")
+            fig2.savefig(ROOT / "dash" / "honest.png", dpi=110, bbox_inches="tight")
+            plt.close(fig2)
+
     out = ROOT / "dash" / "progress.png"
     fig.savefig(out, dpi=110, bbox_inches="tight")
     plt.close(fig)
@@ -153,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
 <body style="font-family:system-ui;background:#111;color:#eee;margin:24px">
 <h2>Brushie CAPS recursion — <a href="/progress.png">graph</a></h2>
 <img src="/progress.png" style="max-width:100%;border:1px solid #333;border-radius:8px">
+<h2>Real perceptual metrics (SSIMULACRA2 + Butteraugli, 163 images)</h2>
+<img src="/honest.png" style="max-width:100%;border:1px solid #333;border-radius:8px">
 <table border="1" cellspacing="0" cellpadding="5" style="margin-top:18px;border-collapse:collapse">
 <tr><th>tag</th><th>time</th><th>.970</th><th>.985</th><th>.995</th><th>note</th></tr>{rows}</table>
 </body></html>"""
@@ -166,6 +211,17 @@ class Handler(BaseHTTPRequestHandler):
             if out is None:
                 self.send_response(404); self.end_headers(); return
             data = out.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/honest.png":
+            p = ROOT / "dash" / "honest.png"
+            if not p.exists():
+                self.send_response(404); self.end_headers(); return
+            data = p.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(data)))
