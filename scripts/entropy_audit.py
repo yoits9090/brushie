@@ -117,6 +117,46 @@ class Dec:
         return b
 
 
+class RansDec:
+    # v7 binary rANS decoder (mirror of src/codec.cpp RansDecoder): 12-bit
+    # probabilities, L=2^16 renorm, little-endian 16-bit chunks after the
+    # 4-byte initial state.
+    def __init__(self, data, size, audit):
+        self.data, self.size, self.pos = data, size, 0
+        self.audit = audit
+        self.x = 0
+        for _ in range(4):
+            self.x = (self.x << 8) | self.read_byte()
+
+    def read_byte(self):
+        if self.pos >= self.size:
+            self.pos += 1
+            return 0
+        b = self.data[self.pos]
+        self.pos += 1
+        return b
+
+    def bit(self, probs, idx, pass_name, shift=5):
+        f1 = probs[idx]
+        slot = self.x & 4095
+        b = 1 if slot >= (4096 - f1) else 0
+        f = f1 if b else (4096 - f1)
+        c = (4096 - f1) if b else 0
+        self.x = f * (self.x >> 12) + slot - c
+        while self.x < (1 << 16):
+            self.x = (self.x << 16) | self.read_byte() | (self.read_byte() << 8)
+        p = f1
+        if b:
+            p = min(4095, p + ((4096 - p) >> shift))
+        else:
+            p = max(1, p - (p >> shift))
+        probs[idx] = p
+        # report the model probability as an 11-bit P(0) so totals stay
+        # comparable with the range-coder audits
+        self.audit.observe(pass_name, idx, (4096 - f1) // 2, b)
+        return b
+
+
 class Audit:
     dump_fh = None
 
@@ -565,7 +605,7 @@ def audit_stream(path: Path):
         audit = Audit(ci)
         if Audit.dump_fh is None and os.environ.get("BRUSHIE_AUDIT_DUMP"):
             Audit.dump_fh = open(os.environ["BRUSHIE_AUDIT_DUMP"], "w")
-        probs = [2047] * 128  # fresh per decode_band_arith call; band-4 resets per section below
+        probs = [2048 if version >= 7 else 2047] * 128  # fresh per decode_band_arith call; band-4 resets per section below
         sh = shapes[channel]
         row = {"layer": layer, "band": band, "channel": channel, "mode": mode,
                "payload_bytes": psize, "k0": -1}
@@ -583,7 +623,7 @@ def audit_stream(path: Path):
                 sec = payload[cursor:cursor + secs[bi]]
                 cursor += secs[bi]
                 audit.tag = f"{ci}.{bi}"
-                probs = [2047] * 128  # each section is its own decode_band_arith call
+                probs = [2048 if version >= 7 else 2047] * 128  # each section is its own decode_band_arith call
                 sec_step = step if bi < 2 else step_d
                 # parent: base for layer 1, else same band one level coarser
                 if layer == 1:
@@ -597,7 +637,8 @@ def audit_stream(path: Path):
                     ph = pl[3] if bi == 0 else (pl[1] // 2)
                 par_step = steps.get((channel, 0, 0), 1) if layer == 1 \
                     else steps.get((channel, layer - 1, bi + 1), 1)
-                dec = Dec(sec[1:], len(sec) - 1, audit)
+                dec = (RansDec(sec[1:], len(sec) - 1, audit) if version >= 7
+                       else Dec(sec[1:], len(sec) - 1, audit))
                 row["k0"] = sec[0] if bi == 0 else row["k0"]
                 _walk(dec, probs, audit, detail[channel][idx][bi + 1],
                       dims[bi][0], dims[bi][0], dims[bi][1], version,
@@ -633,7 +674,8 @@ def audit_stream(path: Path):
                     par = detail[channel][len(sh) - (layer - 1)][band]
                     pw = (pl[0] // 2) if band == 1 else (pl[2] if band == 2 else pl[0] // 2)
                     ph = pl[3] if band == 1 else (pl[1] // 2 if band in (2, 3) else pl[1] // 2)
-            dec = Dec(payload[1:], psize - 1, audit)
+            dec = (RansDec(payload[1:], psize - 1, audit) if version >= 7
+                   else Dec(payload[1:], psize - 1, audit))
             row["k0"] = payload[0]
             par_step = (steps.get((channel, 0, 0), 1) if layer == 1
                         else steps.get((channel, layer - 1, band), 1)) \
