@@ -989,6 +989,31 @@ static void quant_params(double& root_div, double& exp_lo, double& exp_hi,
   if (n >= 7 && v[6] > 0) chroma_hi = v[6];
   if (n >= 8 && v[7] > 0) base_mul = v[7];
 }
+// BRUSHIE_QFINE=0..99: fractional quality ladder. step(q+f) linearly
+// interpolates each level's step between step(q) and step(q+1) in the STEP
+// domain (the naive fractional-loss formula collapses to the same integers
+// at high q). Integer qualities behave exactly as before; streams stay
+// version-compatible because steps are stored per chunk.
+static std::uint8_t qfine() {
+  static const std::uint8_t f = []() {
+    const char* e = std::getenv("BRUSHIE_QFINE");
+    if (!e) return static_cast<std::uint8_t>(0);
+    const int v = std::atoi(e);
+    return (v >= 0 && v <= 99) ? static_cast<std::uint8_t>(v)
+                               : static_cast<std::uint8_t>(0);
+  }();
+  return f;
+}
+static std::uint16_t qfine_lerp(std::uint16_t s0, std::uint16_t s1,
+                                std::uint8_t quality, std::uint8_t f) {
+  if (f == 0 || s0 == s1) return s0;
+  const double t = static_cast<double>(f) / 100.0;
+  const double v = static_cast<double>(s0) +
+                   t * (static_cast<double>(s1) - static_cast<double>(s0));
+  return static_cast<std::uint16_t>(
+      std::min<double>(65535.0, std::max<double>(1.0, std::llround(v))));
+}
+
 // BRUSHIE_LEVELMUL="l1:0.8,l2:1.2,...": per-layer multipliers for the
 // coarsest (l1) onward detail levels, applied on top of the quant table
 // (harness-level per-image allocation search hook).
@@ -1046,8 +1071,28 @@ static std::uint16_t quant_step(std::uint8_t quality,
   if (band == 3) step *= quality < 95 ? diag_lo : diag_hi;
   if (channel == 1 || channel == 2) step *= quality < 95 ? chroma_lo : chroma_hi;
   step *= level_multiplier(num_levels - level_from_finest, num_levels);
-  return static_cast<std::uint16_t>(
+  const std::uint16_t s0 = static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
+  const std::uint8_t qf = qfine();
+  if (qf == 0 || quality >= 100) return s0;
+  // step at quality+1: lossless (1) when q+1 == 100, else same formula.
+  std::uint16_t s1;
+  if (quality + 1 >= 100) {
+    s1 = 1;
+  } else {
+    double root1 = 1.0 + static_cast<double>(100u - std::min<std::uint8_t>(
+                                 static_cast<std::uint8_t>(quality + 1), 100)) / root_div;
+    const double exponent1 = (quality + 1) < 95 ? exp_lo : exp_hi;
+    const double weight1 = std::pow(2.0, exponent1 * std::min<double>(coarseness, 3.0));
+    double step1 = root1 * weight1;
+    if (band == 3) step1 *= (quality + 1) < 95 ? diag_lo : diag_hi;
+    if (channel == 1 || channel == 2)
+      step1 *= (quality + 1) < 95 ? chroma_lo : chroma_hi;
+    step1 *= level_multiplier(num_levels - level_from_finest, num_levels);
+    s1 = static_cast<std::uint16_t>(
+        std::min<double>(65535.0, std::max<double>(1.0, step1)));
+  }
+  return qfine_lerp(s0, s1, quality, qf);
 }
 
 static std::uint16_t base_quant_step(std::uint8_t quality,
@@ -1060,8 +1105,21 @@ static std::uint16_t base_quant_step(std::uint8_t quality,
   // structure dominates the SSIM-family gates and is cheap to code.
   double step = base_mul * (1.0 + static_cast<double>(loss) / root_div);
   if (channel == 1 || channel == 2) step *= quality < 95 ? chroma_lo : chroma_hi;
-  return static_cast<std::uint16_t>(
+  const std::uint16_t s0 = static_cast<std::uint16_t>(
       std::min<double>(65535.0, std::max<double>(1.0, step)));
+  const std::uint8_t qf = qfine();
+  if (qf == 0 || quality >= 100) return s0;
+  std::uint16_t s1;
+  if (quality + 1 >= 100) {
+    s1 = 1;
+  } else {
+    double step1 = base_mul * (1.0 + static_cast<double>(100u - std::min<std::uint8_t>(
+                                       static_cast<std::uint8_t>(quality + 1), 100)) / root_div);
+    if (channel == 1 || channel == 2) step1 *= (quality + 1) < 95 ? chroma_lo : chroma_hi;
+    s1 = static_cast<std::uint16_t>(
+        std::min<double>(65535.0, std::max<double>(1.0, step1)));
+  }
+  return qfine_lerp(s0, s1, quality, qf);
 }
 
 static void quantize_band(std::vector<std::int32_t>& band, std::uint16_t step,
