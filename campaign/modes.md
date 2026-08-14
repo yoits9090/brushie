@@ -34,3 +34,9 @@ Collisions have already happened once (mode 16/17 renumber); prevent the next.
 
 ## UI/text second representation (geom-lab lead, v8)
 - 20+ reserved for palette/edge-map/directional modes; claim before shipping.
+
+## Version collisions (registry history)
+- v6: claimed by coder-lab (unary rate) — metric-lab's M3 activity probe had
+  also used v6; renumbered kVersionActivity=64 on lab/metric only; probe
+  REJECTED at metric level, never merged. Rule: claim version numbers in the
+  Stream versions section BEFORE shipping.

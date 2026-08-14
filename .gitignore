@@ -25,3 +25,5 @@ tracking/*/
 brushie_track.jsonl
 campaign_baseline*
 lab_*
+proto/bench
+proto/dbg*

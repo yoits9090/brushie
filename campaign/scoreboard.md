@@ -68,6 +68,63 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
   WebP 4ms/JPEG 3ms/AVIF 12ms -> ~8ms). coder-lab owns semantics, speed-lab
   owns SIMD path. Mode numbering: geom took 16, coder renumbered to 17.
 
+## UI/text second representation (geom-lab lead, greenlit 2026-08-14)
+geom-lab stage-0 (git 525f8e7): chat .970 stream anatomy - luma detail 49%
+(glyph/avatar edges; text lines quantize away; flats already free via mode 12);
+wavelet-representation FLOOR measured at ~1.5-1.8KB vs AVIF 812B (context bound
+1,095B, zero-order 1,567B, model 1,913B, payload 2,165B). VERDICT: <1,500B
+unreachable in the wavelet domain - second representation required. Stage-1
+run-mode detail (mode 19) rejected (loses to mode 12). Lapped/smooth synthesis
+closed (no free lunch at these rates). base_target=128 worse. BLOCK=32 wins 14B
+but env-derived (not stream-safe) - not shipped.
+DECISION: v8 second representation greenlit as campaign priority for geom-lab:
+palette + edge map (directional contexts) + wavelet residual, trial-selected vs
+wavelet-only; 4x4 directional intra as fallback; target chat .970 -> <1,200B.
+coder-lab routed: chat context headroom (-38% luma detail) + tiny-stream
+overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
+
+## v8 stage-B verdict + scope decision (2026-08-14, geom-lab 9c99b99)
+- Palette+edge-map+residual: DEAD at full res (7,031 edge pixels x 1B = 7KB;
+  total 12.9-13.1KB = 5x worse). Edge VALUES are the cost, not the map.
+- Palette prequantization: RD saturates below gate (K=8: 1,493B @ 0.925); the
+  11x11-windowed metric genuinely rewards AA fringes, which palette destroys.
+  AA fringe = gate-rewarded content. Palette ideas stay dead.
+- Naive 8x8 block-DCT without directional prediction + skip: 5-25x worse.
+- Structural: wavelet is within ~1.5x of its information bound on chat
+  (ctx bound 1,095B vs 2,358B current); the gap is coder-lab's context work.
+- Measured small win: finer base LL + coarser detail (bm=0.2): 2,434B @ 0.97210
+  vs 2,461B @ 0.97103 (~1% on UI images) - QPARAMS integration into the
+  broad-bench per-image profile = geom-lab's current task.
+- DECISION: AV1-lite DEFERRED. Re-evaluation trigger: after rANS v7 +
+  directional text contexts + quant retune land, chat .970 > 1,600B ->
+  greenlight AV1-lite; <= 1,400B -> wavelet path wins, AV1-lite dropped.
+  Trigger recorded here.
+
+## Metric-lab M8 closeout (2026-08-14, git e484587)
+- FULL-CORPUS per-band STEPMUL search: S2-85 -8.5%, BA-0.9 -9.2% (163/163).
+  Numbers: S2-85 81,698 (search) vs 89,271 (grid) vs 52,408 (JXL) = gap 1.56x
+  (was 1.70x); BA-0.9 73,678 vs 81,162 vs 40,193. Pattern: mid layers +10-20%
+  coarser, finest layer -10-18% finer, base saturated. Handed to coder-lab.
+- NEW LEVER: top gates (S2-90/BA-0.6/0.4) barely move (-0.7..-5.1%) - bounded
+  by the q99->lossless cliff; a FINER IN-CODEC HIGH-Q LADDER is the coder-side
+  fix (coder-lab task). Top-gate gap is ladder-coarseness, not RD.
+- LPIPS (alex 0.1.4) added to the stack. Grain probe: DEAD on ALL FOUR metrics
+  (LPIPS +0.004..+0.032 too). Humans are the only open door for grain.
+- M3 activity: closed under every real gate (+0.6..+74.4%). RDO: still loses
+  (+0.9..+12.6%) - needs real-metric weights (handed off).
+
+## v7 rANS SHIPPED TO MAIN (2026-08-14, coder-lab 31b2f4a, orchestrator merge 81e6ed6)
+- Gate-matched quick harness: **8,400 / 15,264 / 33,966** vs frozen v5
+  9,120/16,162/35,380 = **-7.9% / -5.6% / -4.0%**; 4/4 coverage. Decode wall
+  13.9/13.7/16.1 vs v6 16.3/18.4/21.9 (~15-25% faster). Chat tiny-stream
+  fixed-q -12.8..-14.6% (range-coder termination/convergence overhead gone).
+- Verified: pixels identical at every q, v5/v6 streams byte-identical, fuzz
+  clean, modes 13-17 roundtrip, tests pass. Default backend now rANS
+  (BRUSHIE_RANS=0 forces v6 range coder). Mode 18 text-context shot rejected
+  (+1.3..2.4% gate-matched; mode 12 already captures text structure; chat
+  context-bound judged unreachable via adaptive dilution).
+- Pending: main quick-harness confirmation run (campaign_v7_confirm).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).

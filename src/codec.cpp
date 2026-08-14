@@ -545,6 +545,124 @@ class RangeDecoder {
 };
 
 // ---------------------------------------------------------------------------
+// v7: binary rANS with 12-bit adaptive probabilities (L=2^16 renorm window,
+// M=4096 prob scale). rANS decoding is LIFO, so the encoder records symbols
+// forward (adapting the model exactly like the range coder) and encodes the
+// records in reverse; the decoder adapts live while decoding forward. The
+// stream layout per band is [4B final state][16-bit chunks, little-endian,
+// in reverse emission order].
+// ---------------------------------------------------------------------------
+
+class RansEncoder {
+ public:
+  explicit RansEncoder(std::vector<std::uint8_t>& out) : out_(out) {}
+  void encode_bit_impl(std::uint16_t f1, std::uint32_t b) {
+    const std::uint32_t f = b ? f1 : (4096u - f1);
+    const std::uint32_t c = b ? (4096u - f1) : 0u;
+    while (x_ >= (f << 20)) {
+      chunks_.push_back(static_cast<std::uint16_t>(x_ & 0xFFFF));
+      x_ >>= 16;
+    }
+    x_ = (x_ / f) * 4096u + (x_ % f) + c;
+  }
+  void flush() {
+    out_.push_back(static_cast<std::uint8_t>(x_ >> 24));
+    out_.push_back(static_cast<std::uint8_t>(x_ >> 16));
+    out_.push_back(static_cast<std::uint8_t>(x_ >> 8));
+    out_.push_back(static_cast<std::uint8_t>(x_));
+    for (std::size_t i = chunks_.size(); i-- > 0;) {
+      out_.push_back(static_cast<std::uint8_t>(chunks_[i] & 0xFF));
+      out_.push_back(static_cast<std::uint8_t>(chunks_[i] >> 8));
+    }
+  }
+
+ protected:
+  std::vector<std::uint8_t>& out_;
+  std::uint32_t x_ = 1u << 16;
+  std::vector<std::uint16_t> chunks_;
+};
+
+// Model pass sink for v7: adapts the 12-bit probability exactly like the
+// range coder's model and records (prob_before, bit); flush() runs the rANS
+// core over the records in reverse.
+class RansRecord {
+ public:
+  explicit RansRecord(std::vector<std::uint8_t>& out) : out_(out) {}
+  void encode_bit(std::uint16_t& prob, std::uint32_t b, unsigned shift = 5) {
+    rec_.push_back(static_cast<std::uint16_t>((static_cast<std::uint32_t>(prob) << 1) | b));
+    int p = prob;
+    if (b) {
+      p += (4096 - p) >> shift;
+      prob = static_cast<std::uint16_t>(p > 4095 ? 4095 : p);
+    } else {
+      p -= p >> shift;
+      prob = static_cast<std::uint16_t>(p > 0 ? p : 1);
+    }
+  }
+  void flush() {
+    RansEncoder enc(out_);
+    for (std::size_t i = rec_.size(); i-- > 0;) {
+      const std::uint16_t r = rec_[i];
+      enc.encode_bit_impl(static_cast<std::uint16_t>(r >> 1), r & 1u);
+    }
+    enc.flush();
+  }
+
+ private:
+  std::vector<std::uint8_t>& out_;
+  std::vector<std::uint16_t> rec_;
+};
+
+class RansDecoder {
+ public:
+  RansDecoder(const std::uint8_t* data, std::size_t size)
+      : data_(data), size_(size) {
+    for (int i = 0; i < 4; ++i) x_ = (x_ << 8) | read_byte();
+  }
+
+  // f1 is the 12-bit probability of bit == 1; adapts live at the given rate
+  // (the decoder processes symbols in raster order, mirroring the record
+  // pass on the encoder side).
+  std::uint32_t decode_bit(std::uint16_t& f1, unsigned shift = 5) {
+    const std::uint32_t slot = x_ & 4095u;
+    const std::uint32_t b = slot >= (4096u - f1) ? 1u : 0u;
+    const std::uint32_t f = b ? f1 : (4096u - f1);
+    const std::uint32_t c = b ? (4096u - f1) : 0u;
+    x_ = f * (x_ >> 12) + slot - c;
+    while (x_ < (1u << 16)) {
+      x_ = (x_ << 16) | static_cast<std::uint32_t>(read_byte()) |
+           (static_cast<std::uint32_t>(read_byte()) << 8);
+    }
+    int p = f1;
+    if (b) {
+      p += (4096 - p) >> shift;
+      f1 = static_cast<std::uint16_t>(p > 4095 ? 4095 : p);
+    } else {
+      p -= p >> shift;
+      f1 = static_cast<std::uint16_t>(p > 0 ? p : 1);
+    }
+    return b;
+  }
+
+  std::size_t position() const { return pos_; }
+  bool truncated() const { return pos_ > size_; }
+
+ private:
+  const std::uint8_t* data_;
+  std::size_t size_;
+  std::size_t pos_ = 0;
+  std::uint32_t x_ = 0;
+
+  std::uint8_t read_byte() {
+    if (pos_ >= size_) {
+      ++pos_;
+      return 0;
+    }
+    return data_[pos_++];
+  }
+};
+
+// ---------------------------------------------------------------------------
 // v2: context-adaptive band entropy coding
 //
 // Symbols per coefficient (raster scan): a significance flag with an 8-state
@@ -661,6 +779,70 @@ static unsigned sig_idx15(unsigned bucket, bool parent_sig) {
   return bucket + (parent_sig ? energy_bucket_count() : 0u);
 }
 
+// Mode 17: second-order significance contexts (16 is geom-lab's flat-block base mode). Five binary neighbour flags
+// (L, A, AL, LL, AA) keep the spatial pattern information the energy buckets
+// collapsed; BRUSHIE_SIG2PARENT=1 crosses them with the parent-significance
+// gate (32 -> 64 contexts). Everything else is the mode-8 layout.
+static bool second_order_mode(std::uint8_t mode) { return mode == 17; }
+
+// Mode 18: sparse-text significance initialization. The payload carries a
+// second header byte after k0: sig0 = quantized band significance rate
+// (nonzero / count, 1..255). All sig contexts of the mode-8 layout start at
+// P(sig) = sig0 instead of 50%, removing most of the adaptation-convergence
+// waste on sparse bands (3-23% nonzero on text). Everything else is mode 8.
+static bool text_init_mode(std::uint8_t mode) { return mode == 18; }
+
+// Mode 18 sig context: ctx8 + parent*8 + run*16 (32 states). The run bit is
+// DIRECTIONAL: text strokes are horizontal runs in the V band and vertical
+// runs in the H band, so band 1 uses the above-above continuation and the
+// others use left-left.
+static unsigned sig_idx18(unsigned ctx8, bool parent_sig, bool run,
+                          std::uint8_t band) {
+  return ctx8 + (parent_sig ? 8u : 0u) + (run ? 16u : 0u);
+}
+static bool text_run_enabled() {
+  static const bool v = []() {
+    const char* e = std::getenv("BRUSHIE_TEXT_RUN");
+    if (!e) return true;
+    return std::atoi(e) == 1;
+  }();
+  return v;
+}
+static bool text_run(const std::int32_t* band, std::uint32_t stride,
+                     std::uint32_t x, std::uint32_t y, std::uint8_t b) {
+  if (!text_run_enabled()) return false;
+  if (b == 1) {  // H band: vertical run continuation (A && AA)
+    return y > 1 &&
+           band[static_cast<std::size_t>(y - 1) * stride + x] != 0 &&
+           band[static_cast<std::size_t>(y - 2) * stride + x] != 0;
+  }
+  return x > 1 &&
+         band[static_cast<std::size_t>(y) * stride + x - 1] != 0 &&
+         band[static_cast<std::size_t>(y) * stride + x - 2] != 0;
+}
+static bool sig2_parent() {
+  static const bool v = []() {
+    const char* e = std::getenv("BRUSHIE_SIG2PARENT");
+    if (!e) return false;
+    return std::atoi(e) == 1;
+  }();
+  return v;
+}
+static unsigned sig_context5(const std::int32_t* band, std::uint32_t stride,
+                             std::uint32_t x, std::uint32_t y) {
+  unsigned ctx = 0;
+  if (x > 0 && band[static_cast<std::size_t>(y) * stride + x - 1] != 0) ctx += 1;
+  if (y > 0 && band[static_cast<std::size_t>(y - 1) * stride + x] != 0) ctx += 2;
+  if (x > 0 && y > 0 &&
+      band[static_cast<std::size_t>(y - 1) * stride + x - 1] != 0) ctx += 4;
+  if (x > 1 && band[static_cast<std::size_t>(y) * stride + x - 2] != 0) ctx += 8;
+  if (y > 1 && band[static_cast<std::size_t>(y - 2) * stride + x] != 0) ctx += 16;
+  return ctx;
+}
+static unsigned sig_idx16(unsigned ctx5, bool parent_sig) {
+  return ctx5 + (parent_sig ? 32u : 0u);
+}
+
 // Per-child-coefficient features of the 2x2 parent block (the block that
 // collapses into one parent coefficient), in CHILD-quantized units:
 //   scaled = (parent_mag * scale_num) / scale_den   (truncating, exact both sides)
@@ -702,10 +884,10 @@ static void parent_block_features(const std::int32_t* parent,
 
 struct BandProbs {
   std::array<std::uint16_t, kNumCtx> p;
-  // Initialized to 2047, not 2048: with an 11-bit model, prob == 2048 would
-  // let bound == range for range values that are multiples of 2048 and drive
-  // the range to zero in the renorm loop. 2047 keeps bound < range always.
-  BandProbs() { p.fill(2047); }
+  // Initialized to a neutral 50% of the model scale (2047 for the 11-bit
+  // range coder, where prob == 2048 would let bound == range for range
+  // multiples of 2048; 2048 for the v7 12-bit rANS model).
+  explicit BandProbs(std::uint16_t init = 2047) { p.fill(init); }
 };
 
 static std::int32_t median_predict(std::int32_t a, std::int32_t b,
@@ -945,17 +1127,20 @@ static std::int32_t parent_at(const std::int32_t* parent,
   return parent[static_cast<std::size_t>(py) * stride + px];
 }
 
-static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
-                              std::uint32_t h, bool use_prediction,
-                              std::uint64_t nonzero,
-                              std::uint64_t abs_sum,
-                              const std::int32_t* parent,
-                              std::uint32_t parent_stride,
-                              std::uint32_t parent_w, std::uint32_t parent_h,
-                              std::uint8_t mode,
-                              std::uint32_t step_child,
-                              std::uint32_t step_parent,
-                              std::vector<std::uint8_t>& out) {
+template <class Enc>
+static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
+                                   std::uint32_t h, bool use_prediction,
+                                   std::uint64_t nonzero,
+                                   std::uint64_t abs_sum,
+                                   const std::int32_t* parent,
+                                   std::uint32_t parent_stride,
+                                   std::uint32_t parent_w, std::uint32_t parent_h,
+                                   std::uint8_t mode,
+                                   std::uint8_t band_orient,
+                                   std::uint32_t step_child,
+                                   std::uint32_t step_parent,
+                                   std::uint16_t prob_init,
+                                   std::vector<std::uint8_t>& out) {
   const bool use_parent = parent != nullptr;
   // Mode 13/14: parent-block features in child-quantized units. The encoder
   // scales the quantized parent by step_parent/step_child; the decoder gets
@@ -992,8 +1177,26 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
     }
   }
   out.push_back(static_cast<std::uint8_t>(k0));
-  RangeEncoder enc(out);
-  BandProbs probs;
+  std::uint32_t sig0 = 0;
+  if (text_init_mode(mode)) {
+    // quantized band significance rate for the sig-context init
+    const std::uint64_t denom = static_cast<std::uint64_t>(w) * h;
+    sig0 = static_cast<std::uint32_t>(
+        std::min<std::uint64_t>(255, std::max<std::uint64_t>(
+                                        1, (nonzero * 255 + denom / 2) / denom)));
+    out.push_back(static_cast<std::uint8_t>(sig0));
+  }
+  Enc enc(out);
+  BandProbs probs(prob_init);
+  if (text_init_mode(mode)) {
+    // 12-bit scale (v7): P(sig) = sig0*16; 11-bit scale (v6): sig0*8.
+    const std::uint32_t scale = prob_init > 2047 ? 16u : 8u;
+    for (unsigned i = 0; i < 32; ++i) {
+      const std::uint32_t p = sig0 * scale;
+      probs.p[i] = static_cast<std::uint16_t>(
+          p == 0 ? 1u : (p >= prob_init ? prob_init - 1u : p));
+    }
+  }
   int k = k0;
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
@@ -1252,6 +1455,17 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                                       pv != 0);
         s = (q != 0) ? 1u : 0u;
         enc.encode_bit(probs.p[sg], s);
+      } else if (second_order_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx16(sig_context5(band, w, x, y),
+                                      sig2_parent() && pv != 0);
+        s = (q != 0) ? 1u : 0u;
+        enc.encode_bit(probs.p[sg], s);
+      } else if (text_init_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx18(ctx, pv != 0,
+                                      text_run(band, w, x, y, band_orient),
+                                      band_orient);
+        s = (q != 0) ? 1u : 0u;
+        enc.encode_bit(probs.p[sg], s);
       } else {
         const unsigned sg = sig_idx(4, mode, ctx, use_parent && pv != 0);
         s = (q != 0) ? 1u : 0u;
@@ -1385,19 +1599,59 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
   enc.flush();
 }
 
+static bool v7_rans_enabled() {
+  // v7 rANS is the default backend (gate-matched -7.9/-5.6/-4.0% at
+  // .970/.985/.995, decode ~2x core / 15-25% wall faster). BRUSHIE_RANS=0
+  // forces the v6 range coder for A/B or exotic-stream debugging.
+  static const bool v = []() {
+    const char* e = std::getenv("BRUSHIE_RANS");
+    if (e && *e) return std::atoi(e) == 1;
+    return true;
+  }();
+  return v;
+}
 
-static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
-                              std::uint32_t count, std::uint16_t step,
-                              bool use_prediction, std::int32_t* dest,
-                              std::uint32_t stride, std::uint32_t tw,
-                              std::uint32_t th, std::string* error,
-                              const std::int32_t* parent = nullptr,
-                              std::uint32_t parent_stride = 0,
-                              std::uint32_t parent_w = 0,
-                              std::uint32_t parent_h = 0,
-                              bool v2_entropy_layout = false,
-                              std::uint8_t mode = 3,
-                              std::uint16_t version = 4) {
+static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
+                              std::uint32_t h, bool use_prediction,
+                              std::uint64_t nonzero,
+                              std::uint64_t abs_sum,
+                              const std::int32_t* parent,
+                              std::uint32_t parent_stride,
+                              std::uint32_t parent_w, std::uint32_t parent_h,
+                              std::uint8_t mode,
+                              std::uint8_t band_orient,
+                              std::uint32_t step_child,
+                              std::uint32_t step_parent,
+                              std::vector<std::uint8_t>& out) {
+  if (v7_rans_enabled()) {
+    encode_band_arith_impl<RansRecord>(band, w, h, use_prediction, nonzero,
+                                       abs_sum, parent, parent_stride,
+                                       parent_w, parent_h, mode, band_orient,
+                                       step_child, step_parent, 2048, out);
+  } else {
+    encode_band_arith_impl<RangeEncoder>(band, w, h, use_prediction, nonzero,
+                                         abs_sum, parent, parent_stride,
+                                         parent_w, parent_h, mode, band_orient,
+                                         step_child, step_parent, 2047, out);
+  }
+}
+
+
+template <class Dec>
+static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
+                                   std::uint32_t count, std::uint16_t step,
+                                   bool use_prediction, std::int32_t* dest,
+                                   std::uint32_t stride, std::uint32_t tw,
+                                   std::uint32_t th, std::string* error,
+                                   std::uint8_t band_orient,
+                                   std::uint16_t prob_init,
+                                   const std::int32_t* parent = nullptr,
+                                   std::uint32_t parent_stride = 0,
+                                   std::uint32_t parent_w = 0,
+                                   std::uint32_t parent_h = 0,
+                                   bool v2_entropy_layout = false,
+                                   std::uint8_t mode = 3,
+                                   std::uint16_t version = 4) {
   if (size < 1) {
     fail(error, "empty arithmetic band payload");
     return false;
@@ -1407,8 +1661,22 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
     fail(error, "invalid arithmetic Rice parameter");
     return false;
   }
-  RangeDecoder dec(data + 1, size - 1);
-  BandProbs probs;
+  const std::size_t hdr = text_init_mode(mode) ? 2u : 1u;
+  if (size < hdr) {
+    fail(error, "arithmetic band payload too small");
+    return false;
+  }
+  Dec dec(data + hdr, size - hdr);
+  BandProbs probs(prob_init);
+  if (text_init_mode(mode)) {
+    const std::uint32_t sig0 = data[1];
+    const std::uint32_t scale = prob_init > 2047 ? 16u : 8u;
+    for (unsigned i = 0; i < 32; ++i) {
+      const std::uint32_t p = sig0 * scale;
+      probs.p[i] = static_cast<std::uint16_t>(
+          p == 0 ? 1u : (p >= prob_init ? prob_init - 1u : p));
+    }
+  }
   int k = k0;
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
@@ -1688,6 +1956,15 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         const unsigned sg = sig_idx15(energy_bucket_sum(dest, stride, x, y),
                                       pv != 0);
         s = dec.decode_bit(probs.p[sg]);
+      } else if (second_order_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx16(sig_context5(dest, stride, x, y),
+                                      sig2_parent() && pv != 0);
+        s = dec.decode_bit(probs.p[sg]);
+      } else if (text_init_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx18(raw_ctx, pv != 0,
+                                      text_run(dest, stride, x, y, band_orient),
+                                      band_orient);
+        s = dec.decode_bit(probs.p[sg]);
       } else {
         s = dec.decode_bit(probs.p[sig_idx(version, mode, raw_ctx,
                                            use_parent && pv != 0)]);
@@ -1838,7 +2115,7 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
     fail(error, "truncated arithmetic band payload");
     return false;
   }
-  if (dec.position() != size - 1) {
+  if (dec.position() != size - hdr) {
     fail(error, "arithmetic band payload size mismatch");
     return false;
   }
@@ -1868,6 +2145,31 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
     dest[i] = static_cast<std::int32_t>(value);
   }
   return true;
+}
+
+static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
+                              std::uint32_t count, std::uint16_t step,
+                              bool use_prediction, std::int32_t* dest,
+                              std::uint32_t stride, std::uint32_t tw,
+                              std::uint32_t th, std::string* error,
+                              std::uint8_t band_orient,
+                              const std::int32_t* parent = nullptr,
+                              std::uint32_t parent_stride = 0,
+                              std::uint32_t parent_w = 0,
+                              std::uint32_t parent_h = 0,
+                              bool v2_entropy_layout = false,
+                              std::uint8_t mode = 3,
+                              std::uint16_t version = 4) {
+  if (version >= 7) {
+    return decode_band_arith_impl<RansDecoder>(
+        data, size, count, step, use_prediction, dest, stride, tw, th, error,
+        band_orient, 2048, parent, parent_stride, parent_w, parent_h,
+        v2_entropy_layout, mode, version);
+  }
+  return decode_band_arith_impl<RangeDecoder>(
+      data, size, count, step, use_prediction, dest, stride, tw, th, error,
+      band_orient, 2047, parent, parent_stride, parent_w, parent_h,
+      v2_entropy_layout, mode, version);
 }
 
 // ---------------------------------------------------------------------------
@@ -2060,7 +2362,8 @@ static bool test_decode_band(const std::uint8_t* data, std::size_t size,
                              std::uint32_t th) {
   (void)0;
   return decode_band_arith(data, size, count, step, use_prediction, dest,
-                           stride, tw, th, nullptr, 0, 0, 0, false, 3);
+                           stride, tw, th, nullptr, 0, nullptr, 0, 0, 0,
+                           false, 3);
 }
 static std::int64_t floor_div_for_test(std::int64_t a, std::int64_t b) {
   return floor_div(a, b);
@@ -2302,7 +2605,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     const int v = std::atoi(e);
     return (v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 ||
             v == 9 || v == 10 || v == 11 || v == 12 || v == 13 || v == 14 ||
-            v == 15)
+            v == 15 || v == 16 || v == 17 || v == 18)
                ? static_cast<std::uint8_t>(v)
                : static_cast<std::uint8_t>(8);
   }();
@@ -2351,7 +2654,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                       r.layer > 0 ? refs[parent_of(i)].w : 0,
                       r.layer > 0 ? refs[parent_of(i)].h : 0,
                       r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode,
-                      chosen_step[i],
+                      r.band, chosen_step[i],
                       r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
     band_bytes[i] = payload.size();
     band_active[i] = 1;
@@ -2558,7 +2861,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                               r.layer > 0 ? refs[parent_of(ri)].w : 0,
                               r.layer > 0 ? refs[parent_of(ri)].h : 0,
                               r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode,
-                              cand_steps[ri],
+                              r.band, cand_steps[ri],
                               r.layer > 0 ? cand_steps[parent_of(ri)] : 1,
                               payload);
             cand_bytes[ri] = payload.size();
@@ -2828,10 +3131,10 @@ bool encode(const ImageView& image, const EncodeOptions& options,
       std::vector<std::uint8_t> p3, p16;
       encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
                         as_list[i], parent, parent_stride, 0, 0, 3,
-                        chosen_step[i], 1, p3);
+                        r.band, chosen_step[i], 1, p3);
       encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
                         as_list[i], parent, parent_stride, 0, 0, 16,
-                        chosen_step[i], 1, p16);
+                        r.band, chosen_step[i], 1, p16);
       if (p16.size() < p3.size()) {
         c.mode = 16;
         payload = std::move(p16);
@@ -2843,7 +3146,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                         as_list[i], parent, parent_stride,
                         r.layer > 0 ? refs[parent_of(i)].w : 0,
                         r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode,
-                        chosen_step[i],
+                        r.band, chosen_step[i],
                         r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
     }
     c.payload = std::move(payload);
@@ -2931,7 +3234,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
   BRUSHIE_TRACK_SCOPE("encode", "stream");
   output.bytes.assign(kHeaderBytes, 0);
   output.bytes[0] = 'C'; output.bytes[1] = 'A'; output.bytes[2] = 'P'; output.bytes[3] = 'S';
-  put_u16(output.bytes, 4, kVersion);
+  put_u16(output.bytes, 4, v7_rans_enabled() ? 7u : kVersion);
   put_u16(output.bytes, 6, subsample_chroma ? 1u : 0u);
   put_u32(output.bytes, 8, image.width);
   put_u32(output.bytes, 12, image.height);
@@ -3338,8 +3641,9 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         auto merged_mode_ok = [](std::uint8_t m) {
           return m == 0 || (m >= 3 && m <= 23);
         };
+        // step_d == 0 is legal when the D section is absent (mode 0).
         if (!merged_mode_ok(mode_h) || !merged_mode_ok(mode_v) ||
-            !merged_mode_ok(mode_d)) {
+            !merged_mode_ok(mode_d) || (mode_d != 0 && step_d == 0)) {
           fail(error, "invalid merged band metadata");
           return false;
         }
@@ -3386,7 +3690,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
           if (!decode_band_arith(payload + cursor, sec_size,
                                  dims[bi][0] * dims[bi][1], steps[bi], false,
                                  lev.detail[bi].data(), dims[bi][0],
-                                 dims[bi][0], dims[bi][1], &derr, parent,
+                                 dims[bi][0], dims[bi][1], &derr,
+                                 static_cast<std::uint8_t>(bi + 1), parent,
                                  parent_stride, parent_w, parent_h, false,
                                  modes[bi], version)) {
             if (error) *error = "merged(l=" + std::to_string(layer) + ",c=" +
@@ -3403,8 +3708,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         }
       } else {
         if (!decode_band_arith(payload, payload_size, count, step, band == 0,
-                               destination, stride, tw, th, &derr, parent,
-                               parent_stride, parent_w, parent_h,
+                               destination, stride, tw, th, &derr, band,
+                               parent, parent_stride, parent_w, parent_h,
                                version == kVersionBandV2, mode, version)) {
           if (error) *error = "chunk(l=" + std::to_string(layer) + ",b=" +
                                std::to_string(band) + ",c=" + std::to_string(channel) +
@@ -3548,8 +3853,8 @@ bool decode(const std::uint8_t* data, std::size_t size,
     return false;
   }
   const std::uint16_t version = get_u16(data + 4);
-  if (version == kVersion || version == 5 || version == 4 || version == 3 ||
-      version == kVersionBandV2)
+  if (version == kVersion || version == 7 || version == 5 || version == 4 ||
+      version == 3 || version == kVersionBandV2)
     return decode_v2(data, size, output_width, output_height, rgb,
                      max_progressive_layer, error);
   if (version == kVersionLegacy) return decode_v1(data, size, output_width, output_height, rgb, max_progressive_layer, error);
