@@ -83,6 +83,23 @@ wavelet-only; 4x4 directional intra as fallback; target chat .970 -> <1,200B.
 coder-lab routed: chat context headroom (-38% luma detail) + tiny-stream
 overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
 
+## v8 stage-B verdict + scope decision (2026-08-14, geom-lab 9c99b99)
+- Palette+edge-map+residual: DEAD at full res (7,031 edge pixels x 1B = 7KB;
+  total 12.9-13.1KB = 5x worse). Edge VALUES are the cost, not the map.
+- Palette prequantization: RD saturates below gate (K=8: 1,493B @ 0.925); the
+  11x11-windowed metric genuinely rewards AA fringes, which palette destroys.
+  AA fringe = gate-rewarded content. Palette ideas stay dead.
+- Naive 8x8 block-DCT without directional prediction + skip: 5-25x worse.
+- Structural: wavelet is within ~1.5x of its information bound on chat
+  (ctx bound 1,095B vs 2,358B current); the gap is coder-lab's context work.
+- Measured small win: finer base LL + coarser detail (bm=0.2): 2,434B @ 0.97210
+  vs 2,461B @ 0.97103 (~1% on UI images) - QPARAMS integration into the
+  broad-bench per-image profile = geom-lab's current task.
+- DECISION: AV1-lite DEFERRED. Re-evaluation trigger: after rANS v7 +
+  directional text contexts + quant retune land, chat .970 > 1,600B ->
+  greenlight AV1-lite; <= 1,400B -> wavelet path wins, AV1-lite dropped.
+  Trigger recorded here.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
