@@ -1,4 +1,0 @@
-codec,threshold,samples,mean_bytes,mean_encode_ms,mean_decode_ms
-CAPS,0.97,5,9959,41.28,40.9
-CAPS,0.985,5,17104,45.67,33.16
-CAPS,0.995,5,39629,72.44,55.69

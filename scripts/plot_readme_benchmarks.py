@@ -14,8 +14,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-path = ROOT / "campaign_v7_confirm_aggregate.csv"
-rows = list(csv.DictReader(path.open()))
+# Public snapshot: kept in source so the README graph remains reproducible
+# without publishing the full benchmark tables.
+rows = [
+    {"codec": c, "threshold": str(g), "mean_bytes": str(v),
+     "mean_encode_ms": str(e), "mean_decode_ms": str(d)}
+    for g, values in {
+        0.970: {"CAPS": (8399.75, 18.87, 15.83), "AVIF": (6466.00, 108.73, 42.72), "WebP": (7658.50, 23.35, 1.99), "JPEG": (10140.00, 2.20, 1.56), "JPEG2000": (10045.75, 65.42, 44.22)},
+        0.985: {"CAPS": (15263.75, 20.45, 15.44), "AVIF": (12948.00, 112.42, 43.37), "WebP": (13901.00, 34.30, 2.15), "JPEG": (16328.00, 1.78, 0.95), "JPEG2000": (19084.50, 79.27, 53.93)},
+        0.995: {"CAPS": (33966.50, 28.44, 18.07), "AVIF": (31809.50, 113.74, 48.07), "WebP": (65497.50, 133.35, 3.17), "JPEG": (32426.75, 4.51, 2.38), "JPEG2000": (44377.00, 79.59, 54.72)},
+    }.items()
+    for c, (v, e, d) in values.items()
+]
+
 codecs = ["CAPS", "JPEG2000", "AVIF", "WebP", "JPEG"]
 colors = {"CAPS":"#1565c0", "AVIF":"#ef5350", "WebP":"#43a047", "JPEG":"#757575", "JPEG2000":"#8e24aa"}
 labels = {"CAPS":"Brushie", "AVIF":"AVIF", "WebP":"WebP", "JPEG":"JPEG", "JPEG2000":"JPEG 2000"}

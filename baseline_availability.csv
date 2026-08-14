@@ -1,7 +1,0 @@
-codec,available,encoder
-CAPS,1,local build
-PNG,1,Pillow
-JPEG,1,Pillow
-WebP,1,Pillow
-AVIF,1,ffmpeg/libsvtav1
-JXL,0,cjxl not installed

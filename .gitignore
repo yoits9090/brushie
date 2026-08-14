@@ -6,7 +6,7 @@ build/
 # Nested web app (separate repo)
 web/
 
-# Large datasets (download separately; see datasets/README.md)
+# Large datasets (download separately; see DATASETS.md)
 datasets/div2k/
 
 # Python
@@ -27,3 +27,16 @@ campaign_baseline*
 lab_*
 proto/bench
 proto/dbg*
+
+# Research benchmark tables and reports (kept out of the public source tree)
+.research/
+
+*.csv
+*.md
+!README.md
+!LICENSE
+!NOTICE
+!CONTRIBUTING.md
+!SECURITY.md
+!CODE_OF_CONDUCT.md
+!DATASETS.md

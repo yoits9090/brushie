@@ -35,14 +35,14 @@ Brushie maps RGB into reversible YCoCg-R planes, decomposes them with a 5/3 wave
 
 ## Benchmarks
 
-The figure above is generated from the checked-in v7 quick-harness aggregate:
+The figure above is generated from the compact public benchmark snapshot in `scripts/plot_readme_benchmarks.py`:
 
 ```sh
 MPLBACKEND=Agg uv run --with pandas --with matplotlib \
   python scripts/plot_readme_benchmarks.py
 ```
 
-The left panel shows all codecs at the three local-window MS-SSIM proxy gates; Brushie beats JPEG 2000 at each gate. The right panel shows the .985 timing comparison against AVIF and JPEG 2000, where Brushie is faster. JPEG and WebP remain faster overall, and AVIF/WebP remain smaller. These proxy metrics are not a substitute for SSIMULACRA2, Butteraugli, or blinded human preference. See `campaign/landscape_real_metrics.md` for the complete real-metric comparison.
+The left panel shows all codecs at the three local-window MS-SSIM proxy gates; Brushie beats JPEG 2000 at each gate in this quick snapshot. The right panel shows the .985 timing comparison against AVIF and JPEG 2000, where Brushie is faster. JPEG and WebP remain faster overall, and AVIF/WebP remain smaller. These proxy metrics are not a substitute for SSIMULACRA2, Butteraugli, or blinded human preference.
 
 ## License
 
@@ -114,21 +114,6 @@ PNG support is optional and is enabled only when CMake finds libpng. A build wit
 
 For the Python metric tests, install Python 3 with NumPy (and Pillow for the broader evaluation scripts). The codec library and C++ round-trip test do not require Python.
 
-## Enterprise evaluation
+## Benchmark reproduction
 
-Harness v3 compares codecs at equal **local-window multiscale SSIM** gates
-instead of unrelated quality settings or the retired global-moment proxy. It
-uses exhaustive integer quality sweeps, strong JPEG/WebP modes, still-image
-AVIF, honest full-coverage aggregation, reproducibility manifests, and actual
-truncated progressive streams. The full run includes Kodak plus available
-DIV2K validation sources and a `native_expanded` max-1536 profile (sources are
-not upscaled).
-
-```sh
-python3 scripts/enterprise_eval.py --quick
-python3 scripts/enterprise_eval.py --output-prefix harness_v3_full
-```
-
-The harness writes candidate, matched-quality, aggregate, progressive, and
-preview CSVs plus a Markdown decision report. The current commercial
-go/no-go assessment is in [enterprise_readiness.md](enterprise_readiness.md).
+The detailed research tables are intentionally hidden from the public source tree. The compact numbers used in the README graph are preserved in `scripts/plot_readme_benchmarks.py`; run that script to regenerate the image. Full benchmark sweeps can be run against a local dataset checkout with `scripts/enterprise_eval.py`, but their generated CSV/Markdown artifacts remain local.
