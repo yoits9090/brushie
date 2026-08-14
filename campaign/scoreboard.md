@@ -208,6 +208,22 @@ images (deepens the coverage story).
   deprecated (pre-v7 codebase). simd-lab spawned on current main: rANS SIMD
   decode + pyramid/quantize SIMD + parallel decode, byte-identical mandate.
 
+## GATE POLICY + retune verdict (2026-08-14, orchestrator + coder-lab 6d7e22e)
+- v7 CONFIRMED on merged tree: 8,394 / 15,258 / 33,961 (-8.0/-5.6/-4.0% vs frozen).
+- QUANT RETUNE VERDICT: the S2/BA-fitted pattern (QPARAMS 6,1.4,0.95,1.8,1.2,2.5,2.0,0.4
+  + LEVELMUL lF:0.82) LOSES the MS-SSIM gates (+3.7/+5.2/+4.3%) - the two metric
+  families want OPPOSITE allocations. Kept env-gated as the real-metric profile;
+  NOT defaulted (discipline: no regression on the iteration gates without evidence).
+- GATE POLICY (orchestrator): ACCEPTANCE gate = real-metric table (S2/BA + humans),
+  per roadmap M8. MS-SSIM = fast iteration proxy + regression floor. Product-claim
+  headline = honest table. => default-table decision moves to metric-lab's combined
+  re-gate (S2/BA primary, MS-SSIM regression column).
+- AV1-lite trigger re-baseline: wavelet chat floor now ~1,650-1,785B (rANS + mode 24
+  landed; retune lost; text contexts closed; small-chunk rANS state ~130B still
+  possible) > 1,600B line BUT AV1-lite expected 1,500-1,800B is a wash; DEFERRED
+  pending novelty-lab sims (MANIAC/LS/splines = same upside, lower cost). If all
+  three sims fail AND chat >1,600B post-re-gate -> greenlight AV1-lite.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
