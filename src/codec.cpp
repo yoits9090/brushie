@@ -467,8 +467,9 @@ class RangeEncoder {
     }
   }
 
-  void flush() {
+  std::uint8_t flush(bool /*minimal*/ = false) {
     for (int i = 0; i < 5; ++i) shift_low();
+    return 0;
   }
 
  private:
@@ -495,7 +496,8 @@ class RangeEncoder {
 
 class RangeDecoder {
  public:
-  RangeDecoder(const std::uint8_t* data, std::size_t size)
+  RangeDecoder(const std::uint8_t* data, std::size_t size,
+               std::uint32_t /*state_bytes*/ = 4)
       : data_(data), size_(size) {
     for (int i = 0; i < 5; ++i) code_ = (code_ << 8) | read_byte();
   }
@@ -565,10 +567,20 @@ class RansEncoder {
     }
     x_ = (x_ / f) * 4096u + (x_ % f) + c;
   }
-  void flush() {
-    out_.push_back(static_cast<std::uint8_t>(x_ >> 24));
-    out_.push_back(static_cast<std::uint8_t>(x_ >> 16));
-    out_.push_back(static_cast<std::uint8_t>(x_ >> 8));
+  // Minimal big-endian state bytes: 1..4 depending on the final state value.
+  std::uint8_t state_bytes() const {
+    if (x_ < (1u << 8)) return 1;
+    if (x_ < (1u << 16)) return 2;
+    if (x_ < (1u << 24)) return 3;
+    return 4;
+  }
+  // minimal: write only the bytes needed by the final state (mode 24);
+  // otherwise always 4 bytes so un-flagged sections stay layout-compatible.
+  void flush(bool minimal = false) {
+    const std::uint8_t sb = minimal ? state_bytes() : 4;
+    if (sb >= 4) out_.push_back(static_cast<std::uint8_t>(x_ >> 24));
+    if (sb >= 3) out_.push_back(static_cast<std::uint8_t>(x_ >> 16));
+    if (sb >= 2) out_.push_back(static_cast<std::uint8_t>(x_ >> 8));
     out_.push_back(static_cast<std::uint8_t>(x_));
     for (std::size_t i = chunks_.size(); i-- > 0;) {
       out_.push_back(static_cast<std::uint8_t>(chunks_[i] & 0xFF));
@@ -599,13 +611,22 @@ class RansRecord {
       prob = static_cast<std::uint16_t>(p > 0 ? p : 1);
     }
   }
-  void flush() {
+  // minimal: mode 24 tiny-state layout; returns the state size written
+  // (1..4) so the caller can fold (sb-1) into the k0 header byte, or 0 for
+  // the standard 4-byte layout.
+  std::uint8_t flush(bool minimal = false) {
     RansEncoder enc(out_);
     for (std::size_t i = rec_.size(); i-- > 0;) {
       const std::uint16_t r = rec_[i];
       enc.encode_bit_impl(static_cast<std::uint16_t>(r >> 1), r & 1u);
     }
-    enc.flush();
+    if (!minimal) {
+      enc.flush(false);
+      return 0;
+    }
+    const std::uint8_t sb = enc.state_bytes();
+    enc.flush(true);
+    return sb;
   }
 
  private:
@@ -615,9 +636,11 @@ class RansRecord {
 
 class RansDecoder {
  public:
-  RansDecoder(const std::uint8_t* data, std::size_t size)
+  RansDecoder(const std::uint8_t* data, std::size_t size,
+              std::uint32_t state_bytes = 4)
       : data_(data), size_(size) {
-    for (int i = 0; i < 4; ++i) x_ = (x_ << 8) | read_byte();
+    for (std::uint32_t i = 0; i < state_bytes; ++i)
+      x_ = (x_ << 8) | read_byte();
   }
 
   // f1 is the 12-bit probability of bit == 1; adapts live at the given rate
@@ -1234,6 +1257,21 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
       while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
     }
   }
+  if (std::getenv("BRUSHIE_DEBUG_K0")) {
+    std::int64_t mn = 1 << 30, mx = -(1 << 30);
+    std::int64_t sum = 0;
+    std::uint64_t nzc = 0;
+    for (std::uint32_t i = 0; i < w * h; ++i) {
+      mn = std::min<std::int64_t>(mn, band[i]);
+      mx = std::max<std::int64_t>(mx, band[i]);
+      if (band[i] != 0) { nzc++; sum += band[i] < 0 ? -band[i] : band[i]; }
+    }
+    std::fprintf(stderr, "K0DBG mode=%u w=%u h=%u step? k0=%d mean|q|=%lld (%lld/%llu) min=%lld max=%lld\n",
+                 mode, w, h, k0, nzc ? sum / static_cast<std::int64_t>(nzc) : 0,
+                 static_cast<std::int64_t>(sum), static_cast<unsigned long long>(nzc),
+                 static_cast<long long>(mn), static_cast<long long>(mx));
+  }
+  const std::size_t k0_pos = out.size();
   out.push_back(static_cast<std::uint8_t>(k0));
   std::uint32_t sig0 = 0;
   if (text_init_mode(mode)) {
@@ -1258,11 +1296,16 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
   int k = k0;
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
-  if (mode == 12 || mode == 21 || mode == 22 || mode == 23) {
-    // Block significance flags: zero blocks cost one context bit and skip
-    // every coefficient symbol inside them. Block size carried by the mode
-    // byte: 12=16x16, 21=8x8, 22=32x32, 23=64x64 (stream-safe selection).
-    const std::uint32_t kB = mode == 21 ? 8u : (mode == 22 ? 32u : (mode == 23 ? 64u : 16u));
+  if (mode == 12 || mode == 24) {
+    // Block significance flags (16x16): a zero block costs one context bit
+    // and skips every coefficient symbol inside it (EBCOT-style codeblocks).
+    // Mode 24 is the same layout with a tiny rANS initial state (k0 flag).
+    static const std::uint32_t kB = []() {
+      const char* e = std::getenv("BRUSHIE_BLOCK");
+      if (!e) return 16u;
+      const int v = std::atoi(e);
+      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
+    }();
     const std::uint32_t bw = (w + kB - 1) / kB;
     const std::uint32_t bh = (h + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -1298,6 +1341,9 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
             const unsigned ctx = sig_idx(4, mode, sig_context(band, w, x, y), use_parent && pv != 0);
             const std::uint32_t s = (q != 0) ? 1u : 0u;
             enc.encode_bit(probs.p[ctx], s);
+            if (std::getenv("BRUSHIE_DBG19"))
+              std::fprintf(stderr, "ENC %p (%u,%u) w=%u h=%u pv=%d ctx=%u q=%d s=%u\n",
+                           (const void*)band, xx, yy, w, h, (int)pv, ctx, (int)q, s);
             if (s) {
               const std::uint32_t sign = q < 0 ? 1u : 0u;
               const unsigned sign_ctx = sign_idx(4, mode, sign_context(band, w, x, y), use_parent && pv < 0);
@@ -1336,7 +1382,11 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
         }
       }
     }
-    enc.flush();
+    const std::uint8_t sb = enc.flush(mode == 24);
+    if (sb > 0 && mode == 24) {
+      out[k0_pos] = static_cast<std::uint8_t>(
+          ((static_cast<unsigned>(sb) - 1u) << 4) | (out[k0_pos] & 15u));
+    }
     return;
   }
   if (mode == 16) {
@@ -1650,7 +1700,11 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
       }
     }
   }
-  enc.flush();
+  const std::uint8_t sb = enc.flush(mode == 24);
+  if (sb > 0 && mode == 24) {
+    out[k0_pos] = static_cast<std::uint8_t>(
+        ((static_cast<unsigned>(sb) - 1u) << 4) | (out[k0_pos] & 15u));
+  }
 }
 
 static bool v7_rans_enabled() {
@@ -1710,7 +1764,14 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
     fail(error, "empty arithmetic band payload");
     return false;
   }
-  const int k0 = data[0];
+  int k0 = data[0];
+  // Mode 24 (tiny-state block mode): the k0 byte's top 2 bits carry the
+  // rANS initial-state size (0..3 -> 1..4 bytes); the low 4 bits are k0.
+  std::uint32_t state_bytes = 4;
+  if (mode == 24 && version >= 7) {
+    state_bytes = (static_cast<std::uint32_t>(k0) >> 4) + 1u;
+    k0 = k0 & 15;
+  }
   if (k0 < 0 || k0 > 12) {
     fail(error, "invalid arithmetic Rice parameter");
     return false;
@@ -1720,7 +1781,7 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
     fail(error, "arithmetic band payload too small");
     return false;
   }
-  Dec dec(data + hdr, size - hdr);
+  Dec dec(data + hdr, size - hdr, state_bytes);
   BandProbs probs(prob_init);
   if (text_init_mode(mode)) {
     const std::uint32_t sig0 = data[1];
@@ -1748,8 +1809,13 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
     parent_block_features(parent, parent_stride, parent_w, parent_h, 1, step,
                           tw, th, pclass_arr, pmean_arr);
   }
-  if (mode == 12 || mode == 21 || mode == 22 || mode == 23) {
-    const std::uint32_t kB = mode == 21 ? 8u : (mode == 22 ? 32u : (mode == 23 ? 64u : 16u));
+  if (mode == 12 || mode == 24) {
+    static const std::uint32_t kB = []() {
+      const char* e = std::getenv("BRUSHIE_BLOCK");
+      if (!e) return 16u;
+      const int v = std::atoi(e);
+      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
+    }();
     const std::uint32_t bw = (tw + kB - 1) / kB;
     const std::uint32_t bh = (th + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -1759,6 +1825,9 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
         if (bx > 0 && block_nz[by * bw + bx - 1]) bctx += 1;
         if (by > 0 && block_nz[(by - 1) * bw + bx]) bctx += 2;
         block_nz[by * bw + bx] = dec.decode_bit(probs.p[kCtxBlk + bctx]) ? 1 : 0;
+        if (std::getenv("BRUSHIE_DBG19"))
+          std::fprintf(stderr, "DBG blk (%u,%u) b=%u pos=%zu\n", bx, by,
+                       block_nz[by * bw + bx], dec.position());
       }
     }
     for (std::uint32_t by = 0; by < bh; ++by) {
@@ -1772,6 +1841,9 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
             const unsigned raw_ctx = sig_context(dest, stride, x, y);
             const std::uint32_t s = dec.decode_bit(
                 probs.p[sig_idx(version, mode, raw_ctx, use_parent && pv != 0)]);
+            if (std::getenv("BRUSHIE_DBG19"))
+              std::fprintf(stderr, "DEC %p (%u,%u) pv=%d ctx=%u s=%u pos=%zu\n",
+                           (const void*)dest, x, y, (int)pv, raw_ctx, s, dec.position());
             std::int32_t q = 0;
             if (s) {
               const unsigned sign_ctx = sign_idx(version, mode,
@@ -2465,85 +2537,6 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     BRUSHIE_TRACK_SCOPE("encode", "input_planes");
     input_planes(image, planes, effective.threads);
   }
-  // UI palette probe (v8 research): BRUSHIE_UI_PALETTE=K quantizes the input
-  // to a K-color palette (deterministic k-means-lite) before the transform.
-  // Encode-side only: no stream change, no decode change. For UI content the
-  // anti-aliased fringe collapses into crisp palette edges, which the wavelet
-  // codes with far fewer coefficients.
-  static const int ui_palette_k = []() {
-    const char* e = std::getenv("BRUSHIE_UI_PALETTE");
-    return e ? std::atoi(e) : 0;
-  }();
-  if (ui_palette_k > 0 && !has_alpha) {
-    const unsigned channels_in = image.channels == 4 ? 4u : 3u;
-    const std::size_t stride_in = image.stride ? image.stride : static_cast<std::size_t>(image.width) * channels_in;
-    const int K = std::min(ui_palette_k, 32);
-    const std::size_t n = static_cast<std::size_t>(image.width) * image.height;
-    std::vector<std::array<double, 3>> cents(K);
-    {
-      // deterministic k-means-lite: init from a fixed-stride sample, 10 iters
-      std::vector<std::array<double, 3>> samples;
-      samples.reserve(std::min<std::size_t>(n, 8192));
-      for (std::size_t i = 0; i < n; i += std::max<std::size_t>(1, n / 8192))
-        samples.push_back({static_cast<double>(image.rgb[i * 3 + 0]),
-                           static_cast<double>(image.rgb[i * 3 + 1]),
-                           static_cast<double>(image.rgb[i * 3 + 2])});
-      for (int k = 0; k < K; ++k) cents[k] = samples[static_cast<std::size_t>(k) * samples.size() / K];
-      for (int it = 0; it < 10; ++it) {
-        std::vector<std::array<double, 3>> acc(K, std::array<double, 3>{0.0, 0.0, 0.0});
-        std::vector<std::uint64_t> cnt(K, 0);
-        for (const auto& s : samples) {
-          double best = 1e30;
-          int bk = 0;
-          for (int k = 0; k < K; ++k) {
-            const double d = (s[0] - cents[k][0]) * (s[0] - cents[k][0]) +
-                             (s[1] - cents[k][1]) * (s[1] - cents[k][1]) +
-                             (s[2] - cents[k][2]) * (s[2] - cents[k][2]);
-            if (d < best) { best = d; bk = k; }
-          }
-          acc[bk][0] += s[0]; acc[bk][1] += s[1]; acc[bk][2] += s[2];
-          ++cnt[bk];
-        }
-        for (int k = 0; k < K; ++k)
-          if (cnt[k]) {
-            cents[k][0] = acc[k][0] / cnt[k];
-            cents[k][1] = acc[k][1] / cnt[k];
-            cents[k][2] = acc[k][2] / cnt[k];
-          }
-      }
-    }
-    std::vector<std::array<std::uint8_t, 3>> pal(K);
-    for (int k = 0; k < K; ++k) {
-      pal[k][0] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][0])))));
-      pal[k][1] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][1])))));
-      pal[k][2] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][2])))));
-    }
-    // re-run the color transform on the palette-mapped pixels
-    parallel_for(image.height, effective.threads, [&](std::size_t yy) {
-      const std::uint8_t* row = image.rgb + yy * stride_in;
-      for (std::uint32_t x = 0; x < image.width; ++x) {
-        const std::uint8_t* p = row + x * channels_in;
-        int bk = 0;
-        double best = 1e30;
-        for (int k = 0; k < K; ++k) {
-          const double d = (p[0] - pal[k][0]) * (p[0] - pal[k][0]) +
-                           (p[1] - pal[k][1]) * (p[1] - pal[k][1]) +
-                           (p[2] - pal[k][2]) * (p[2] - pal[k][2]);
-          if (d < best) { best = d; bk = k; }
-        }
-        const int r = pal[bk][0], g = pal[bk][1], b = pal[bk][2];
-        const int co = r - b;
-        const int t = b + floor_div(co, 2);
-        const int cg = g - t;
-        const int y = t + floor_div(cg, 2);
-        const std::size_t i = yy * image.width + x;
-        planes[0][i] = y;
-        planes[1][i] = co;
-        planes[2][i] = cg;
-        planes[3][i] = 0;
-      }
-    });
-  }
   std::uint32_t cw = image.width, ch = image.height;
   if (subsample_chroma) {
     BRUSHIE_TRACK_SCOPE("encode", "chroma_ds");
@@ -2654,7 +2647,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     const int v = std::atoi(e);
     return (v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 ||
             v == 9 || v == 10 || v == 11 || v == 12 || v == 13 || v == 14 ||
-            v == 15 || v == 16 || v == 17 || v == 18)
+            v == 15 || v == 16 || v == 17 || v == 18 || v == 24)
                ? static_cast<std::uint8_t>(v)
                : static_cast<std::uint8_t>(8);
   }();
@@ -3020,7 +3013,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     // block-sparse (synthetic/flat content), and are pure overhead on dense
     // photo bands.
     if (c.mode != 3 && c.mode != 7 && c.mode != 13 && c.mode != 14 &&
-        c.mode != 16 && refs[i].w >= 16 && refs[i].h >= 16) {
+        c.mode != 16 && c.mode != 24 && refs[i].w >= 16 && refs[i].h >= 16) {
       static const std::uint32_t kB = []() {
         const char* e = std::getenv("BRUSHIE_BLOCK");
         if (!e) return 16u;
@@ -3042,43 +3035,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
           if (nz) ++nz_blocks;
         }
       }
-      if (nz_blocks * 10 <= bw * bh * 5) c.mode = 12;
-    }
-    if (c.mode == 12 && refs[i].w >= 32 && refs[i].h >= 32) {
-      // block-size trial (v6): the block size is streamed via the mode byte,
-      // so per-band selection is safe. 16 (12) vs 8 (21) vs 32 (22); 64x64
-      // (23) skipped (rarely wins on these band sizes).
-      static const bool bsweep_on = []() {
-        const char* e = std::getenv("BRUSHIE_BSWEEP");
-        return !e || std::atoi(e) != 0;
-      }();
-      if (bsweep_on) {
-        std::vector<std::uint8_t> p16, p8, p32;
-        const std::int32_t* par = nullptr;
-        std::uint32_t par_stride = 0, par_w = 0, par_h = 0;
-        if (refs[i].layer > 0) {
-          const std::size_t pi = parent_of(i);
-          par = quant[pi].data();
-          par_stride = refs[pi].w;
-          par_w = refs[pi].w;
-          par_h = refs[pi].h;
-        }
-        const std::uint32_t st_c = chosen_step[i];
-        const std::uint32_t st_p = refs[i].layer > 0 ? chosen_step[parent_of(i)] : 1;
-        encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
-                          nz_list[i], as_list[i], par, par_stride, par_w, par_h, 12,
-                          refs[i].band, st_c, st_p, p16);
-        encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
-                          nz_list[i], as_list[i], par, par_stride, par_w, par_h, 21,
-                          refs[i].band, st_c, st_p, p8);
-        if (refs[i].w >= 64 && refs[i].h >= 64) {
-          encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
-                            nz_list[i], as_list[i], par, par_stride, par_w, par_h, 22,
-                            refs[i].band, st_c, st_p, p32);
-          if (p32.size() < p16.size() && p32.size() < p8.size()) c.mode = 22;
-        }
-        if (c.mode == 12 && p8.size() < p16.size()) c.mode = 21;
-      }
+      if (nz_blocks * 10 <= bw * bh * 5)
+        c.mode = v7_rans_enabled() ? 24 : 12;
     }
     c.count = refs[i].w * refs[i].h;
     // Re-encode the committed quantized state into the chunk payload.
@@ -3584,7 +3542,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     expected_payload_offset = offset + payload_size;
-    if (channel >= channels || band > 4 || mode < 3 || mode > 23 || step == 0 ||
+    if (channel >= channels || band > 4 || mode < 3 || mode > 24 || step == 0 ||
         ((tw == 0 || th == 0) && band != 4) || (band == 4 && (tw != 0 || th != 0)) ||
         count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
@@ -3688,7 +3646,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         const std::uint32_t size_h = get_u32(payload + 5);
         const std::uint32_t size_v = get_u32(payload + 9);
         auto merged_mode_ok = [](std::uint8_t m) {
-          return m == 0 || (m >= 3 && m <= 23);
+          return m == 0 || (m >= 3 && m <= 24);
         };
         // step_d == 0 is legal when the D section is absent (mode 0).
         if (!merged_mode_ok(mode_h) || !merged_mode_ok(mode_v) ||

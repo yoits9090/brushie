@@ -121,11 +121,11 @@ class RansDec:
     # v7 binary rANS decoder (mirror of src/codec.cpp RansDecoder): 12-bit
     # probabilities, L=2^16 renorm, little-endian 16-bit chunks after the
     # 4-byte initial state.
-    def __init__(self, data, size, audit):
+    def __init__(self, data, size, audit, state_bytes=4):
         self.data, self.size, self.pos = data, size, 0
         self.audit = audit
         self.x = 0
-        for _ in range(4):
+        for _ in range(state_bytes):
             self.x = (self.x << 8) | self.read_byte()
 
     def read_byte(self):
@@ -213,6 +213,8 @@ def walk_band(dec, probs, audit, dest, stride, tw, th, version, mode,
               use_prediction, parent, parent_stride, parent_w, parent_h,
               pass_bits):
     k = dec.data[0]
+    if mode == 24 and version >= 7:
+        k = k & 15
     # note: dec was constructed on data[1:], so data[0] here == original k0
     return _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                  use_prediction, parent, parent_stride, parent_w, parent_h, k)
@@ -345,8 +347,8 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
     if (parent_mag_mode(mode) or os.environ.get("BRUSHIE_AUDIT_STATS")) and use_parent:
         pclass_arr, pmean_arr = parent_block_features(
             parent, parent_stride, parent_w, parent_h, step_p, step_c, tw, th)
-    if mode in (12, 21, 22, 23):
-        kB = 21 if False else (8 if mode == 21 else (32 if mode == 22 else (64 if mode == 23 else 16)))
+    if mode in (12, 24):
+        kB = 16
         bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
         block_nz = [0] * (bw * bh)
         for by in range(bh):
@@ -401,94 +403,6 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                             p = a if y == 0 else (b if x == 0 else median_predict(a, b, c))
                             q += p
                         dest[y * stride + x] = q
-        return
-    if mode == 16:
-        # flat-block base mode (v6): flags 0..3, block-value sig 4..7 +
-        # sign 57..60, non-flat coeffs sig 8..15 / sign 16..19, unary
-        # 20..43, rem 44..56, separate vk/k adaptation.
-        kB = 4
-        bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
-        flat = [0] * (bw * bh)
-        bval = [0] * (bw * bh)
-        bres = [0] * (bw * bh)
-        for by in range(bh):
-            for bx in range(bw):
-                fctx = 0
-                if bx > 0 and flat[by * bw + bx - 1]: fctx += 1
-                if by > 0 and flat[(by - 1) * bw + bx]: fctx += 2
-                flat[by * bw + bx] = dec.bit(probs, fctx, "blk16")
-        vk = 0
-        v_mag_sum, v_mag_count = 0, 0
-        for by in range(bh):
-            for bx in range(bw):
-                idx = by * bw + bx
-                y0, x0 = by * kB, bx * kB
-                y1, x1 = min(th, y0 + kB), min(tw, x0 + kB)
-                if flat[idx]:
-                    pv = 0
-                    if bx > 0 and flat[idx - 1]: pv = bval[idx - 1]
-                    elif by > 0 and flat[idx - bw]: pv = bval[idx - bw]
-                    lr = bres[idx - 1] if (bx > 0 and flat[idx - 1]) else 0
-                    ar = bres[idx - bw] if (by > 0 and flat[idx - bw]) else 0
-                    vctx = 4 + (1 if lr != 0 else 0) + (2 if ar != 0 else 0)
-                    rv = 0
-                    if dec.bit(probs, vctx, "sig16v"):
-                        sctx = 57 + (1 if lr < 0 else 0) + (2 if ar < 0 else 0)
-                        sign = dec.bit(probs, sctx, "sign16v")
-                        mean1 = (abs(lr) + abs(ar)) // 2 + 1
-                        nk = 0
-                        while nk < 12 and (1 << (nk + 1)) <= mean1: nk += 1
-                        kk = max(nk, vk)
-                        qq = 0
-                        while True:
-                            if dec.bit(probs, unary_idx(version, mode, qq, 0), "unary"): break
-                            qq += 1
-                        m = qq << kk
-                        for i in range(kk):
-                            m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
-                        rv = m + 1
-                        if sign: rv = -rv
-                        v_mag_sum += m
-                        v_mag_count += 1
-                        if v_mag_count == 32:
-                            nk2 = 0
-                            vv = v_mag_sum // 32
-                            while nk2 < 12 and (1 << (nk2 + 1)) <= vv: nk2 += 1
-                            vk = nk2; v_mag_sum = 0; v_mag_count = 0
-                    bres[idx] = rv
-                    bval[idx] = pv + rv
-                    for yy in range(y0, y1):
-                        for xx in range(x0, x1):
-                            dest[yy * stride + xx] = bval[idx]
-                    continue
-                for yy in range(y0, y1):
-                    for xx in range(x0, x1):
-                        s = dec.bit(probs, 8 + sig_context(dest, stride, xx, yy), "sig")
-                        q = 0
-                        if s:
-                            sign = dec.bit(probs, 16 + sign_context(dest, stride, xx, yy), "sign")
-                            qq = 0
-                            while True:
-                                if dec.bit(probs, unary_idx(version, mode, qq, 0), "unary"): break
-                                qq += 1
-                            m = qq << k
-                            for i in range(k):
-                                m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
-                            q = m + 1
-                            if sign: q = -q
-                            mag_sum += m
-                            mag_count += 1
-                            if mag_count == 64:
-                                v = mag_sum // 64
-                                nk = 0
-                                while nk < 12 and (1 << (nk + 1)) <= v: nk += 1
-                                k = nk; mag_sum = 0; mag_count = 0
-                        a = dest[yy * stride + xx - 1] if xx > 0 else 0
-                        b = dest[(yy - 1) * stride + xx] if yy > 0 else 0
-                        c = dest[(yy - 1) * stride + xx - 1] if (xx > 0 and yy > 0) else 0
-                        p = a if yy == 0 else (b if xx == 0 else median_predict(a, b, c))
-                        q += p
-                        dest[yy * stride + xx] = q
         return
     for y in range(th):
         for x in range(tw):
@@ -708,8 +622,6 @@ def audit_stream(path: Path):
             cursor = 13
             secs = [size_h, size_v, psize - 13 - size_h - size_v]
             for bi in range(3):
-                if modes[bi] == 0:
-                    continue
                 sec = payload[cursor:cursor + secs[bi]]
                 cursor += secs[bi]
                 audit.tag = f"{ci}.{bi}"
@@ -727,7 +639,8 @@ def audit_stream(path: Path):
                     ph = pl[3] if bi == 0 else (pl[1] // 2)
                 par_step = steps.get((channel, 0, 0), 1) if layer == 1 \
                     else steps.get((channel, layer - 1, bi + 1), 1)
-                dec = (RansDec(sec[1:], len(sec) - 1, audit) if version >= 7
+                sb = ((sec[0] >> 4) + 1) if (modes[bi] == 24 and version >= 7) else 4
+                dec = (RansDec(sec[1:], len(sec) - 1, audit, sb) if version >= 7
                        else Dec(sec[1:], len(sec) - 1, audit))
                 row["k0"] = sec[0] if bi == 0 else row["k0"]
                 _walk(dec, probs, audit, detail[channel][idx][bi + 1],
@@ -764,7 +677,8 @@ def audit_stream(path: Path):
                     par = detail[channel][len(sh) - (layer - 1)][band]
                     pw = (pl[0] // 2) if band == 1 else (pl[2] if band == 2 else pl[0] // 2)
                     ph = pl[3] if band == 1 else (pl[1] // 2 if band in (2, 3) else pl[1] // 2)
-            dec = (RansDec(payload[1:], psize - 1, audit) if version >= 7
+            sb = ((payload[0] >> 4) + 1) if (mode == 24 and version >= 7) else 4
+            dec = (RansDec(payload[1:], psize - 1, audit, sb) if version >= 7
                    else Dec(payload[1:], psize - 1, audit))
             row["k0"] = payload[0]
             par_step = (steps.get((channel, 0, 0), 1) if layer == 1

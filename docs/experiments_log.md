@@ -402,3 +402,22 @@ validating the earlier "+12% coder overhead on small streams" audit finding),
 meme 1,796 -> 1,484 (-17.4%), kodak01 15,204 -> 14,548 (-4.3%), kodak02
 16,739 -> 15,764 (-5.8%). Block-size trial contribution at .970: chat -9B,
 meme -14B (rANS dominates the delta). Fuzz 300 clean.
+### Rejected: mode 18 text-context significance coding
+sig0 per-band significance-rate init byte + directional run-continuation
+context (LL for V-band horizontal strokes, AA for H-band; BRUSHIE_TEXT_RUN
+knob). Fixed-q chat/meme: init+run -0.10..-0.13% at best (with the auto
+mode-12 flip enabled for both); without the flip mode 18 is +22..29% worse
+(mode 12's block flags already capture the stroke structure). Gate-matched
+(v7+18): 8,509/15,529/34,771 vs v7+8's 8,400/15,264/33,966 = +1.3/+1.7/+2.4.
+The 1,095B chat context bound is unreachable via adaptive-context variants
+(dilution); the real chat levers remain rANS v7 + quant retune. Kept behind
+BRUSHIE_ENTROPY=18.
+
+### Shipped: mode 24 tiny-state block sections (v7)
+Mode 24 = mode-12 block layout with a 1-4 byte rANS initial state: the k0
+byte's top 2 bits carry the state size (k0 & 15 keeps the Rice parameter).
+Sparse-band auto-selection writes 24 instead of 12 under the v7 rANS core.
+Measured: chat 1,797 -> 1,785B (-0.67%), 16-image photo corpus q50 sum
+213,935 -> 213,897B (-0.018%); fuzz 1500 clean; unit tests pass; old streams
+decode unchanged (k0 <= 12 never carries the flag). Registry: mode 19 was
+geom-lab's rejected run-mode probe; tiny-state block mode claims 24.
