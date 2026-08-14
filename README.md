@@ -60,6 +60,12 @@ convention (per-stage ns+cycle timelines via `BRUSHIE_TRACK=1`,
 per-chunk byte audits, callgrind/cachegrind instruction and cache counters),
 and `scripts/track.py` / `scripts/track_diff.py` for run capture and diffing.
 
+## Open-source status
+
+Brushie is an experimental research codec, not a standards-compliant or production-ready replacement for JPEG XL, AVIF, WebP, or PNG. The benchmark corpus and historical experiment artifacts are included for reproducibility where their upstream terms permit; verify dataset terms before redistributing them.
+
+The current implementation is intentionally honest about its limits: real-metric results are corpus-dependent, the headline numbers include per-image search in some tables, LPIPS control is unverified, and blinded human testing, sanitizer coverage, color/metadata handling, and portability validation are still incomplete. Treat the stream format and API as unstable until a versioned release is announced.
+
 ## Build
 
 ```sh
