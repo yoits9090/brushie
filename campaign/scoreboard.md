@@ -55,6 +55,19 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
   against real metrics = ~8-16% free at high gates (coder-lab implements).
 - Blind 2AFC rig built (scripts/blind_test_rig.py, 12 imgs x 6 codecs).
 
+## Coder-lab v7 decision (2026-08-14, git 1d3626b)
+- rANS adaptive prototype (symbol-exact dumps, 500/500 roundtrips, bit-exact
+  C++ decode): **-2.2..-2.8% density + 2.1x decode speedup** (5.6 vs 12.0
+  ns/sym); encode core ~1.5x (LIFO reverse pass + causal pre-pass); static
+  per-band tables rejected (+3.5%, header costs). Context-modeling book
+  CLOSED: modes 13/14/15/17 all measured and rejected (parent-mag +2.75..3.05%,
+  parent-value +13.8..16.2%, energy buckets +0.64..4.39%, second-order sig
+  +4.55..5.95%).
+- Orchestrator decision: GREENLIGHT v7 rANS with pre-pass scheme (contexts
+  unchanged); decode 2.1x flips our weakest competitive axis (decode 17ms vs
+  WebP 4ms/JPEG 3ms/AVIF 12ms -> ~8ms). coder-lab owns semantics, speed-lab
+  owns SIMD path. Mode numbering: geom took 16, coder renumbered to 17.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
