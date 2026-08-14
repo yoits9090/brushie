@@ -356,3 +356,23 @@ decode with the old core unchanged. Measured: kodak01 512px q30/50/75:
 -12.8% (tiny chunks win the most: 4B termination vs range-coder cache
 chains + exact probabilities). 1500-iteration fuzz clean; modes 13/14/15/17
 roundtrip in v7; unit tests pass. Pixels identical at every q.
+
+### Shipped (gate-matched): v7 rANS backend quick harness
+BRUSHIE_RANS=1 (mode 8): **8,400 / 15,264 / 33,966** vs frozen v5 baseline
+9,120 / 16,162 / 35,380 = **-7.9% / -5.6% / -4.0%** at .970/.985/.995 with 4/4
+coverage (v6 alone was -0.98/-0.59/-0.33; the rANS core adds ~-7/-5/-3.7).
+Decode wall ~14-16ms vs v6's 16-22ms. Pixels identical at every q; v5/v6
+streams decode unchanged; 1500-iteration fuzz clean; modes 13/14/15/17
+roundtrip under v7. Chat fixed-q: -12.8..-14.6% (tiny-chunk termination +
+warmup win).
+
+### Rejected: mode 18 text-context significance coding
+sig0 per-band significance-rate init byte + directional run-continuation
+context (LL for V-band horizontal strokes, AA for H-band; BRUSHIE_TEXT_RUN
+knob). Fixed-q chat/meme: init+run -0.10..-0.13% at best (with the auto
+mode-12 flip enabled for both); without the flip mode 18 is +22..29% worse
+(mode 12's block flags already capture the stroke structure). Gate-matched
+(v7+18): 8,509/15,529/34,771 vs v7+8's 8,400/15,264/33,966 = +1.3/+1.7/+2.4.
+The 1,095B chat context bound is unreachable via adaptive-context variants
+(dilution); the real chat levers remain rANS v7 + quant retune. Kept behind
+BRUSHIE_ENTROPY=18.
