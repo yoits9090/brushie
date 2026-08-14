@@ -391,3 +391,14 @@ modes + RDO (multi-week build; estimated chat .970 outcome 1,500-1,800B,
 not <1,200B, absent per-block RDO). Simulating it faithfully (mode
 selection, prediction residuals, flat-skip) is the next step before any
 C++ — see geom-lab report #4 for the recommendation.
+
+## v7 rANS era (rebased lab/geom)
+
+Merge of coder-lab v7 rANS (stream version 7 when enabled, BRUSHIE_RANS=0
+forces the v6 range coder) + geom block-size modes 21/22/23 (stream-safe via
+mode byte, per-band trial among 8/16/32). Per-image at gate qualities:
+chat .970 2,358 -> 1,791 (-24.0%; rANS dominates on tiny sparse chunks,
+validating the earlier "+12% coder overhead on small streams" audit finding),
+meme 1,796 -> 1,484 (-17.4%), kodak01 15,204 -> 14,548 (-4.3%), kodak02
+16,739 -> 15,764 (-5.8%). Block-size trial contribution at .970: chat -9B,
+meme -14B (rANS dominates the delta). Fuzz 300 clean.
