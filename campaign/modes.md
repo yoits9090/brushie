@@ -27,7 +27,8 @@ Collisions have already happened once (mode 16/17 renumber); prevent the next.
 | 16 | geom | flat-block base (trial vs 3, shipped in main) |
 | 17 | coder | second-order sig ctx - REJECTED (+4.55..5.95%), kept env-gated |
 | 18 | coder | (reserved: BRUSHIE_BLOCK size variant - NOT stream-safe yet) |
-| 19 | geom | run-mode detail - REJECTED (loses to 12), reverted |
+| 19 | geom | run-mode detail - REJECTED (loses to 12), reverted; never shipped (no streams exist) |
+| 24+ | coder | tiny-state block mode (WIP 2026-08-14) - claim before shipping; decoder range 3..23 needs extending |
 | 21 | geom | block-flag mode 8x8 blocks (stream-safe via mode byte, shipped with trial) |
 | 22 | geom | block-flag mode 32x32 blocks (stream-safe via mode byte, shipped with trial) |
 | 23 | geom | block-flag mode 64x64 blocks (stream-safe via mode byte, reserved) |
