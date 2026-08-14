@@ -1614,9 +1614,13 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
 }
 
 static bool v7_rans_enabled() {
+  // v7 rANS is the default backend (gate-matched -7.9/-5.6/-4.0% at
+  // .970/.985/.995, decode ~2x core / 15-25% wall faster). BRUSHIE_RANS=0
+  // forces the v6 range coder for A/B or exotic-stream debugging.
   static const bool v = []() {
     const char* e = std::getenv("BRUSHIE_RANS");
-    return e && std::atoi(e) == 1;
+    if (e && *e) return std::atoi(e) == 1;
+    return true;
   }();
   return v;
 }
