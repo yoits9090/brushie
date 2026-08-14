@@ -5,8 +5,10 @@ Collisions have already happened once (mode 16/17 renumber); prevent the next.
 
 ## Stream versions
 - v1/v2 legacy (40B dir), v3/v4 (20B dir), v5 (16B dir), v6 (unary rate 1/16)
-- v7 = rANS backend (coder-lab, in progress)
-- v8+ = reserved for the UI/text second representation (geom-lab)
+- v7 = rANS backend (shipped, default)
+- v8 = reserved for the UI/text second representation (geom-lab; likely retired)
+- v9 = compact-stream format (coder-lab, greenlit 2026-08-14): 11B/chunk dir,
+  8B merged headers, merged base chunks -> ~127B saved on chat
 
 ## Detail-band modes (BRUSHIE_ENTROPY / mode byte)
 | mode | owner | status |
