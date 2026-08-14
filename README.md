@@ -11,7 +11,7 @@ A from-scratch C++ image codec for compact, progressive image streams, built aro
 - RGB/RGBA input, lossless quality-100 mode, optional 4:2:0 chroma at lossy qualities
 - Compact 16-byte chunk directory and v7 rANS payloads (older v1-v6 streams decode)
 - Reproducible CMake build, CTest round-trip coverage, malformed-header checks, and fuzz tooling
-- Strongest measured results are on the checked-in local-MS-SSIM proxy at high quality: CAPS is close to JPEG and beats JPEG 2000 at the 0.995 broad-corpus gate; CAPS also has a faster encode path than AVIF/JPEG 2000 in the reference timing run
+- Strongest measured results are on the checked-in v7 quick local-MS-SSIM proxy: CAPS beats JPEG 2000 at all three gates and has a faster encode/decode path than AVIF and JPEG 2000 in that reference run
 
 These are measured strengths, not a claim that Brushie is the best codec overall. On the checked-in SSIMULACRA2/Butteraugli landscape, JPEG XL, WebP, and AVIF are generally smaller at comparable perceptual gates.
 
@@ -35,14 +35,14 @@ Brushie maps RGB into reversible YCoCg-R planes, decomposes them with a 5/3 wave
 
 ## Benchmarks
 
-The figure above is generated from the checked-in broad-corpus aggregate:
+The figure above is generated from the checked-in v7 quick-harness aggregate:
 
 ```sh
 MPLBACKEND=Agg uv run --with pandas --with matplotlib \
   python scripts/plot_readme_benchmarks.py
 ```
 
-The left panel shows the 0.995 local-window MS-SSIM proxy gate, where Brushie is close to JPEG and slightly smaller than JPEG 2000 in this snapshot. The right panel shows encode/decode timing from the same broad-corpus run. These proxy metrics are not a substitute for SSIMULACRA2, Butteraugli, or blinded human preference. See `campaign/landscape_real_metrics.md` for the complete real-metric comparison.
+The left panel shows all codecs at the three local-window MS-SSIM proxy gates; Brushie beats JPEG 2000 at each gate. The right panel shows the .985 timing comparison against AVIF and JPEG 2000, where Brushie is faster. JPEG and WebP remain faster overall, and AVIF/WebP remain smaller. These proxy metrics are not a substitute for SSIMULACRA2, Butteraugli, or blinded human preference. See `campaign/landscape_real_metrics.md` for the complete real-metric comparison.
 
 ## License
 
