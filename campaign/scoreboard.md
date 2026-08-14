@@ -125,6 +125,16 @@ overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
   context-bound judged unreachable via adaptive dilution).
 - Pending: main quick-harness confirmation run (campaign_v7_confirm).
 
+## High-q ladder (2026-08-14, coder-lab 9b28f2a, merged)
+- Mapped the cliff: q99->q100 = +101%/+124% bytes on kodak01/02 512px
+  (138,737 -> 353,857 / 103,516 -> 316,897) - the top-gate lever metric-lab
+  identified. New BRUSHIE_QFINE (0..99) lerps step(q)->step(q+1) in the STEP
+  domain per level: 5-6 intermediate points; f60-75 saturate (integer-step
+  collapse) - per-level LEVELMUL is the finer rung for inside-gap points.
+  Zero format change (steps stored per chunk), integer qualities unchanged,
+  streams decode without the env. Approved metric-lab sweep: (q98,q99) x
+  QFINE {25,50,60,75,90} x per-group stepmul, gated on S2-85/90 + BA-0.6/0.4.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
