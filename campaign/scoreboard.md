@@ -100,6 +100,19 @@ overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
   greenlight AV1-lite; <= 1,400B -> wavelet path wins, AV1-lite dropped.
   Trigger recorded here.
 
+## Metric-lab M8 closeout (2026-08-14, git e484587)
+- FULL-CORPUS per-band STEPMUL search: S2-85 -8.5%, BA-0.9 -9.2% (163/163).
+  Numbers: S2-85 81,698 (search) vs 89,271 (grid) vs 52,408 (JXL) = gap 1.56x
+  (was 1.70x); BA-0.9 73,678 vs 81,162 vs 40,193. Pattern: mid layers +10-20%
+  coarser, finest layer -10-18% finer, base saturated. Handed to coder-lab.
+- NEW LEVER: top gates (S2-90/BA-0.6/0.4) barely move (-0.7..-5.1%) - bounded
+  by the q99->lossless cliff; a FINER IN-CODEC HIGH-Q LADDER is the coder-side
+  fix (coder-lab task). Top-gate gap is ladder-coarseness, not RD.
+- LPIPS (alex 0.1.4) added to the stack. Grain probe: DEAD on ALL FOUR metrics
+  (LPIPS +0.004..+0.032 too). Humans are the only open door for grain.
+- M3 activity: closed under every real gate (+0.6..+74.4%). RDO: still loses
+  (+0.9..+12.6%) - needs real-metric weights (handed off).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
