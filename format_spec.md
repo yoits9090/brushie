@@ -1,4 +1,4 @@
-# CAPS stream format v5
+# CAPS stream format v7 (experimental)
 
 All integers are little-endian. A stream is self-contained and may be
 validated without allocating a decoded image. Implementations must reject
@@ -17,17 +17,19 @@ overflow, unknown version, and checksum failures.
   compatibility.
 * v4: same directory; significance and sign contexts separated (the v3
   layout overlapped them), local per-coefficient Rice parameters (mode 8).
-* v5 (current): 16-byte whole-band directory (per-payload checksum dropped);
-  detail bands additionally support per-band 16x16 block-significance mode
-  (mode 12) chosen automatically for sparse bands, and the base band may use
-  GAP prediction (mode 7) behind an opt-in flag.
+* v5/v6: 16-byte whole-band directory (per-payload checksum dropped), with
+  range-coded arithmetic payloads and additional experimental modes.
+* v7 (current default): the same directory and self-describing chunk metadata,
+  but arithmetic payloads use binary rANS with 12-bit adaptive probabilities.
+  Mode 24 may encode a compact initial-state length in the k0 byte. The v7
+  encoder is selected by default; `BRUSHIE_RANS=0` is a legacy/debug option.
 
 ## Header (64 bytes)
 
 | Offset | Size | Field |
 |---:|---:|---|
 | 0 | 4 | ASCII `CAPS` magic |
-| 4 | 2 | version = 5 |
+| 4 | 2 | version = 7 (current default; v1-v6 are decode-compatible where supported) |
 | 6 | 2 | flags: bit 0 = chroma 4:2:0 subsampled; bits 1..15 reserved |
 | 8 | 4 | source width |
 | 12 | 4 | source height |
@@ -46,7 +48,7 @@ overflow, unknown version, and checksum failures.
 | 56 | 4 | FNV-1a checksum of header bytes 0..55 |
 | 60 | 4 | reserved |
 
-## Directory (16 bytes per chunk, v5)
+## Directory (16 bytes per chunk, v5-v7)
 
 A chunk is one whole band of one channel at one progressive layer. Chunks and
 payloads are ordered coarse-to-fine and contiguous. Because whole bands start
@@ -77,7 +79,7 @@ One payload per (layer, band, channel) band. Layout:
 | Bytes | Field |
 |---|---|
 | 1 | initial Golomb-Rice parameter k0 (0..12) |
-| rest | carryless binary range-coded stream (11-bit adaptive probabilities) |
+| rest | v5/v6: carryless binary range-coded stream (11-bit adaptive probabilities); v7: binary rANS stream with a 4-byte (or mode-24 compact) initial state and 12-bit adaptive probabilities |
 
 Symbols per coefficient, in raster scan order:
 
@@ -126,3 +128,7 @@ reconstructed pyramid prefix is bilinearly resampled.
 
 The reversible YCoCg-R channels are reconstructed from the base LL and the
 selected detail layers by inverse 5/3 lifting, then converted to RGB.
+
+## Encoder configuration and reproducibility
+
+The stream stores the selected mode, dimensions, steps, and payload lengths, so normal decode does not need encoder settings. The public v7 entropy model is fixed by the stream version and mode; legacy tuning environment variables are ignored by the current implementation. Other `BRUSHIE_*` variables remain experimental and are not part of the stable public interface.

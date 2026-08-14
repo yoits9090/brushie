@@ -3,9 +3,9 @@
 Brushie CAPS (Compact Adaptive Pyramid Streams) is a deterministic CPU-only
 image codec. It uses a reversible YCoCg-R transform, a 5/3 lifting pyramid,
 midtread scalar quantization with frequency-ordered steps, and whole-band
-context-adaptive binary arithmetic coding. The current v5 stream uses a
-compact 16-byte whole-band directory (v3/v4 20-byte and v1/v2 40-byte
-streams still decode). Detail bands use per-coefficient local Rice
+context-adaptive binary arithmetic coding. The current research stream uses a
+compact 16-byte whole-band directory and a v7 rANS backend by default (older
+v1-v6 streams still decode). The stream format is experimental and may change. Detail bands use per-coefficient local Rice
 parameters, an automatic per-band 16x16 block-significance mode for sparse
 bands, and each level's H/V/D triple is merged into a single band-4 chunk.
 Bands are ordered coarse-to-fine for progressive decoding, and chroma is
@@ -30,14 +30,15 @@ all codecs 4/4 coverage):
 | .985 | 12,948 | 13,901 | 16,328 | 19,084 | 18,316 |
 | .995 | 31,810 | 65,498 | 32,427 | 44,377 | 38,174 |
 
-The v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) plus the
-broad-corpus work cuts CAPS to **9,120 / 16,162 / 35,380** mean bytes on the
-original quick eval, and to **11,527 / 21,498 / 54,831** on a 163-image
+The earlier v4/v5 recursion (see [docs/recursion.md](docs/recursion.md)) plus
+broad-corpus work measured CAPS at **9,120 / 16,162 / 35,380** mean bytes on
+the original quick eval, and **11,527 / 21,498 / 54,831** on a 163-image
 public-benchmark corpus (Kodak 24 + DIV2K 100 + USC-SIPI 39, same windowed
-MS-SSIM gates, per-image adaptive quant profiles): v4 sign/significance
+MS-SSIM gates, per-image adaptive quant profiles). These are historical
+MS-SSIM-proxy results, not current v7 real-metric product claims: v4 sign/significance
 context separation, per-coefficient local Rice parameters, a
 metric-calibrated base multiplier, per-band 16x16 block-significance modes,
-a 16-byte v5 directory, merged H/V/D band-4 chunks, and a harness-side
+a 16-byte compact directory, merged H/V/D band-4 chunks, and a harness-side
 per-image profile search measured with the real metric. CAPS beats JPEG and
 JPEG 2000 at every gate with FULL coverage on the broad corpus (AVIF/WebP
 lose coverage at .995: 153/163 and 144/163); AVIF remains 1.23x/1.15x/1.26x
@@ -47,22 +48,13 @@ JPEG 4/3. See `benchmarks/`, `dash/broad.json`, and
 `harness_v5_final_quick_report.md`. SSIMULACRA2/Butteraugli and blinded
 humans remain required before product claims.
 
-## Moonshot campaign (active)
+## Research status
 
-Target: 2x better than competitors at equal quality — mean bytes at the
-.970/.985/.995 gates cut to ~half of AVIF's (4,700/9,300/21,800 on the broad
-corpus) with CPU-only encode+decode at least as fast as today. Four parallel
-sub-agent labs run in git worktrees (branches `lab/coder`, `lab/geom`,
-`lab/metric`, `lab/speed`) on two Colab-CLI CPU boxes (`colab-lab`,
-`colab-sweep`); see [docs/labs.md](docs/labs.md) for the playbook,
-[tracking/README.md](tracking/README.md) for the total-instrumentation
-convention (per-stage ns+cycle timelines via `BRUSHIE_TRACK=1`,
-per-chunk byte audits, callgrind/cachegrind instruction and cache counters),
-and `scripts/track.py` / `scripts/track_diff.py` for run capture and diffing.
+The repository contains the research logs and benchmark artifacts behind the codec. They are useful for reproduction, but they are not a product benchmark or a universal ranking: the primary broad-corpus loop uses a local-window MS-SSIM proxy, while the checked-in SSIMULACRA2/Butteraugli landscape shows CAPS trailing JPEG XL, WebP, and AVIF on comparable real-metric gates. See `enterprise_readiness.md` and `campaign/landscape_real_metrics.md` for the limitations and exact caveats.
 
 ## Open-source status
 
-Brushie is an experimental research codec, not a standards-compliant or production-ready replacement for JPEG XL, AVIF, WebP, or PNG. The benchmark corpus and historical experiment artifacts are included for reproducibility where their upstream terms permit; verify dataset terms before redistributing them.
+Brushie is an experimental research codec, not a standards-compliant or production-ready replacement for JPEG XL, AVIF, WebP, or PNG. The benchmark corpus and historical experiment artifacts are included for reproducibility where their upstream terms permit; see `DATASETS.md` and verify dataset terms before redistributing them.
 
 The current implementation is intentionally honest about its limits: real-metric results are corpus-dependent, the headline numbers include per-image search in some tables, LPIPS control is unverified, and blinded human testing, sanitizer coverage, color/metadata handling, and portability validation are still incomplete. Treat the stream format and API as unstable until a versioned release is announced.
 
@@ -71,6 +63,7 @@ The current implementation is intentionally honest about its limits: real-metric
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
+ctest --test-dir build --output-on-failure
 ```
 
 Where CMake is not installed, the equivalent build is:
@@ -81,13 +74,30 @@ clang++ -std=c++17 -O3 -ffast-math -Iinclude src/codec.cpp src/main.cpp -o build
 # PNG I/O (optional): add -DBRUSHIE_HAVE_PNG and link libpng
 ```
 
+## Tests
+
+The canonical C++ test is built by CMake and run with CTest:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build -j8
+ctest --test-dir build --output-on-failure
+```
+
+Optional Python metric tests require NumPy (and Pillow for the broader benchmark scripts):
+
+```sh
+python3 tests/test_quality_metrics.py
+python3 tests/test_enterprise_eval_helpers.py
+```
+
 ## Use
 
 The CLI reads and writes PPM, and PNG (RGB or RGBA) when built with libpng:
 
 ```sh
-build/brushie encode input.png output.brbr 45 8 64
-build/brushie decode output.brbr output.png 4096 4096 -1
+build/brushie encode input.ppm output.brbr 45 8 64
+build/brushie decode output.brbr output.ppm 4096 4096 -1
 ```
 
 RGBA PNGs round-trip losslessly at quality 100 (alpha is coded at full
@@ -106,9 +116,13 @@ build/brushie encode input.ppm output.brbr --target-bytes 250000 --threads 8
 build/brushie encode input.ppm output.brbr --target-lpips 0.06 --threads 8
 ```
 
-`--target-lpips` exposes the requested control surface but is marked
-`target_lpips_unverified` because LPIPS is not linked into the deterministic
-CPU core.
+`--target-lpips` is only a heuristic quality preset; no LPIPS model is
+linked or evaluated by the deterministic CPU core, and the CLI labels the
+result `target_lpips_unverified`. Do not treat it as an LPIPS target.
+
+PNG support is optional and is enabled only when CMake finds libpng. A build without libpng is PPM-only; the no-CMake command below intentionally builds PPM-only. Input PNG metadata and 16-bit samples are not preserved by the optional CLI path.
+
+For the Python metric tests, install Python 3 with NumPy (and Pillow for the broader evaluation scripts). The codec library and C++ round-trip test do not require Python.
 
 ## Enterprise evaluation
 

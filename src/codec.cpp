@@ -710,7 +710,7 @@ class RansDecoder {
 //   v6 mode 14:      mode 13 + magnitude value prediction from the parent
 //                    2x2 block mean (zigzag residual, local residual-scale k)
 //   v6 mode 15:      AUREA-style energy-bucket significance contexts
-//                    (BRUSHIE_EBUCKETS=8|16|32, default 8)
+//                    fixed eight energy buckets
 constexpr unsigned kCtxBlk = 4;  // block-flag neighbour contexts (mode 12)
 constexpr unsigned kNumCtx = 128;  // mode 15 energy buckets may use 64 sig ctxs
 
@@ -754,32 +754,23 @@ static unsigned rem_idx_pm(unsigned i) { return 60u + i; }  // 60..71
 
 // Adaptation rate for the unary quotient pass only. The unary contexts show
 // ~8% adaptation lag against the static optimum at the .985 operating point;
-// v6 streams adapt at 1/16 (BRUSHIE_UNARY_RATE=3..8 overrides). v5 and older
-// streams keep the historical 1/32 rate so they stay decodable.
+// v6/v7 streams use a fixed 1/16 adaptation rate; older streams retain
+// their historical 1/32 rate.
 static unsigned unary_adapt_shift(std::uint16_t version) {
-  if (version < 6) return 5u;
-  static const unsigned shift = []() {
-    const char* e = std::getenv("BRUSHIE_UNARY_RATE");
-    if (!e) return 4u;
-    const int v = std::atoi(e);
-    return (v >= 3 && v <= 8) ? static_cast<unsigned>(v) : 4u;
-  }();
-  return shift;
+  // Stream versions select their entropy model. Do not consult process
+  // environment here: an env-dependent decoder cannot reliably read a stream
+  // produced by another process. The old tuning hook is intentionally ignored.
+  return version < 6 ? 5u : 4u;
 }
 
 // Mode 15: AUREA-style energy-bucket significance contexts. The causal
-// magnitude sum |L|+|A|+|AL| is bucketed linearly (BRUSHIE_EBUCKETS, default
-// 8) and crossed with the parent-significance gate, replacing the 3 binary
+// magnitude sum |L|+|A|+|AL| is bucketed linearly into eight buckets and
+// crossed with the parent-significance gate, replacing the 3 binary
 // neighbour flags. Everything else is the mode-8 layout.
 static bool energy_bucket_mode(std::uint8_t mode) { return mode == 15; }
 static unsigned energy_bucket_count() {
-  static const unsigned nb = []() {
-    const char* e = std::getenv("BRUSHIE_EBUCKETS");
-    if (!e) return 8u;
-    const int v = std::atoi(e);
-    return (v == 8 || v == 16 || v == 32) ? static_cast<unsigned>(v) : 8u;
-  }();
-  return nb;
+  // Mode 15 has a fixed on-stream model in the experimental format.
+  return 8u;
 }
 static unsigned energy_bucket_sum(const std::int32_t* band, std::uint32_t stride,
                                   std::uint32_t x, std::uint32_t y) {
@@ -804,8 +795,8 @@ static unsigned sig_idx15(unsigned bucket, bool parent_sig) {
 
 // Mode 17: second-order significance contexts (16 is geom-lab's flat-block base mode). Five binary neighbour flags
 // (L, A, AL, LL, AA) keep the spatial pattern information the energy buckets
-// collapsed; BRUSHIE_SIG2PARENT=1 crosses them with the parent-significance
-// gate (32 -> 64 contexts). Everything else is the mode-8 layout.
+// collapsed. The parent-significance gate is fixed off for this experimental
+// mode. Everything else is the mode-8 layout.
 static bool second_order_mode(std::uint8_t mode) { return mode == 17; }
 
 // Mode 18: sparse-text significance initialization. The payload carries a
@@ -824,12 +815,8 @@ static unsigned sig_idx18(unsigned ctx8, bool parent_sig, bool run,
   return ctx8 + (parent_sig ? 8u : 0u) + (run ? 16u : 0u);
 }
 static bool text_run_enabled() {
-  static const bool v = []() {
-    const char* e = std::getenv("BRUSHIE_TEXT_RUN");
-    if (!e) return true;
-    return std::atoi(e) == 1;
-  }();
-  return v;
+  // Mode 18 is always directional; this keeps encode/decode self-contained.
+  return true;
 }
 static bool text_run(const std::int32_t* band, std::uint32_t stride,
                      std::uint32_t x, std::uint32_t y, std::uint8_t b) {
@@ -844,12 +831,8 @@ static bool text_run(const std::int32_t* band, std::uint32_t stride,
          band[static_cast<std::size_t>(y) * stride + x - 2] != 0;
 }
 static bool sig2_parent() {
-  static const bool v = []() {
-    const char* e = std::getenv("BRUSHIE_SIG2PARENT");
-    if (!e) return false;
-    return std::atoi(e) == 1;
-  }();
-  return v;
+  // The mode definition is fixed; experimental env tuning is disabled.
+  return false;
 }
 static unsigned sig_context5(const std::int32_t* band, std::uint32_t stride,
                              std::uint32_t x, std::uint32_t y) {
@@ -1300,12 +1283,7 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
     // Block significance flags (16x16): a zero block costs one context bit
     // and skips every coefficient symbol inside it (EBCOT-style codeblocks).
     // Mode 24 is the same layout with a tiny rANS initial state (k0 flag).
-    static const std::uint32_t kB = []() {
-      const char* e = std::getenv("BRUSHIE_BLOCK");
-      if (!e) return 16u;
-      const int v = std::atoi(e);
-      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
-    }();
+    static constexpr std::uint32_t kB = 16u;
     const std::uint32_t bw = (w + kB - 1) / kB;
     const std::uint32_t bh = (h + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -1810,12 +1788,7 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
                           tw, th, pclass_arr, pmean_arr);
   }
   if (mode == 12 || mode == 24) {
-    static const std::uint32_t kB = []() {
-      const char* e = std::getenv("BRUSHIE_BLOCK");
-      if (!e) return 16u;
-      const int v = std::atoi(e);
-      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
-    }();
+    static constexpr std::uint32_t kB = 16u;
     const std::uint32_t bw = (tw + kB - 1) / kB;
     const std::uint32_t bh = (th + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -3014,12 +2987,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     // photo bands.
     if (c.mode != 3 && c.mode != 7 && c.mode != 13 && c.mode != 14 &&
         c.mode != 16 && c.mode != 24 && refs[i].w >= 16 && refs[i].h >= 16) {
-      static const std::uint32_t kB = []() {
-        const char* e = std::getenv("BRUSHIE_BLOCK");
-        if (!e) return 16u;
-        const int v = std::atoi(e);
-        return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
-      }();
+      static constexpr std::uint32_t kB = 16u;
       const std::uint32_t bw = (refs[i].w + kB - 1) / kB;
       const std::uint32_t bh = (refs[i].h + kB - 1) / kB;
       std::uint32_t nz_blocks = 0;
