@@ -262,6 +262,19 @@ ARCHITECTURAL CONCLUSION: the wavelet + fixed contexts + rANS + compact
 format IS the architecture; remaining levers are all in the queue (v9,
 SIMD, re-gate defaults, MANIAC re-test).
 
+## GATE DECISION + ACCEPTANCE HEADLINE (2026-08-14, metric-lab 4871bd2)
+8-gate defaults-vs-S2-profile decision (S2/BA primary, MS-SSIM regression clean):
+- Global fold REJECTED: S2-60 regresses +10.5% (55/163 wins) with the profile.
+- QUALITY-TIERED FOLD ACCEPTED: keep exp_lo=1.25 below q95; adopt ehi=0.95 +
+  lF:0.82 at q95+ only (all profile wins live at q>=95: S2-85 -3.0%, BA-0.9
+  -2.7%, BA-0.6 -1.7%). coder-lab implements after v9.
+- ACCEPTANCE HEADLINE (defaults + per-image search): S2 1.20x/1.35x/1.39x/1.76x
+  vs best (was 1.26/1.45/1.70/2.53); BA 1.48x/1.70x/2.12x/2.10x (was
+  1.63/2.02/2.92/2.81). With stepmul: S2-85 73,083 / S2-90 126,872 /
+  BA-0.6 119,055 / BA-0.4 167,325 (0/489 violations).
+- metric-lab IDLE; combined re-gate script ready (real_metrics_bench.py
+  --codecs CAPS --reuse-competitors), triggers on the coder-lab fold.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
