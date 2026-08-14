@@ -660,6 +660,34 @@ static unsigned sig_idx15(unsigned bucket, bool parent_sig) {
   return bucket + (parent_sig ? energy_bucket_count() : 0u);
 }
 
+// Mode 17: second-order significance contexts (16 is geom-lab's flat-block base mode). Five binary neighbour flags
+// (L, A, AL, LL, AA) keep the spatial pattern information the energy buckets
+// collapsed; BRUSHIE_SIG2PARENT=1 crosses them with the parent-significance
+// gate (32 -> 64 contexts). Everything else is the mode-8 layout.
+static bool second_order_mode(std::uint8_t mode) { return mode == 17; }
+static bool sig2_parent() {
+  static const bool v = []() {
+    const char* e = std::getenv("BRUSHIE_SIG2PARENT");
+    if (!e) return false;
+    return std::atoi(e) == 1;
+  }();
+  return v;
+}
+static unsigned sig_context5(const std::int32_t* band, std::uint32_t stride,
+                             std::uint32_t x, std::uint32_t y) {
+  unsigned ctx = 0;
+  if (x > 0 && band[static_cast<std::size_t>(y) * stride + x - 1] != 0) ctx += 1;
+  if (y > 0 && band[static_cast<std::size_t>(y - 1) * stride + x] != 0) ctx += 2;
+  if (x > 0 && y > 0 &&
+      band[static_cast<std::size_t>(y - 1) * stride + x - 1] != 0) ctx += 4;
+  if (x > 1 && band[static_cast<std::size_t>(y) * stride + x - 2] != 0) ctx += 8;
+  if (y > 1 && band[static_cast<std::size_t>(y - 2) * stride + x] != 0) ctx += 16;
+  return ctx;
+}
+static unsigned sig_idx16(unsigned ctx5, bool parent_sig) {
+  return ctx5 + (parent_sig ? 32u : 0u);
+}
+
 // Per-child-coefficient features of the 2x2 parent block (the block that
 // collapses into one parent coefficient), in CHILD-quantized units:
 //   scaled = (parent_mag * scale_num) / scale_den   (truncating, exact both sides)
@@ -1104,6 +1132,11 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                                       pv != 0);
         s = (q != 0) ? 1u : 0u;
         enc.encode_bit(probs.p[sg], s);
+      } else if (second_order_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx16(sig_context5(band, w, x, y),
+                                      sig2_parent() && pv != 0);
+        s = (q != 0) ? 1u : 0u;
+        enc.encode_bit(probs.p[sg], s);
       } else {
         const unsigned sg = sig_idx(4, mode, ctx, use_parent && pv != 0);
         s = (q != 0) ? 1u : 0u;
@@ -1403,6 +1436,10 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
       } else if (energy_bucket_mode(mode) && use_parent) {
         const unsigned sg = sig_idx15(energy_bucket_sum(dest, stride, x, y),
                                       pv != 0);
+        s = dec.decode_bit(probs.p[sg]);
+      } else if (second_order_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx16(sig_context5(dest, stride, x, y),
+                                      sig2_parent() && pv != 0);
         s = dec.decode_bit(probs.p[sg]);
       } else {
         s = dec.decode_bit(probs.p[sig_idx(version, mode, raw_ctx,
@@ -1931,7 +1968,7 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     const int v = std::atoi(e);
     return (v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 ||
             v == 9 || v == 10 || v == 11 || v == 12 || v == 13 || v == 14 ||
-            v == 15)
+            v == 15 || v == 16 || v == 17)
                ? static_cast<std::uint8_t>(v)
                : static_cast<std::uint8_t>(8);
   }();
@@ -2699,7 +2736,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     expected_payload_offset = offset + payload_size;
-    if (channel >= channels || band > 4 || mode < 3 || mode > 15 || step == 0 ||
+    if (channel >= channels || band > 4 || mode < 3 || mode > 17 || step == 0 ||
         ((tw == 0 || th == 0) && band != 4) || (band == 4 && (tw != 0 || th != 0)) ||
         count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
@@ -2802,8 +2839,8 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         const std::uint8_t mode_d = payload[4];
         const std::uint32_t size_h = get_u32(payload + 5);
         const std::uint32_t size_v = get_u32(payload + 9);
-        if (mode_h < 3 || mode_h > 15 || mode_v < 3 || mode_v > 15 ||
-            mode_d < 3 || mode_d > 15 || step_d == 0) {
+        if (mode_h < 3 || mode_h > 17 || mode_v < 3 || mode_v > 17 ||
+            mode_d < 3 || mode_d > 17 || step_d == 0) {
           fail(error, "invalid merged band metadata");
           return false;
         }

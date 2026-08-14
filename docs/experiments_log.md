@@ -240,3 +240,25 @@ Findings on kodak01 detail bands: sig is the only pass with real context
 structure (ctx-entropy 99,859 vs zero-order 124,099 bits at q50, adaptive
 model tracks it within 0.3%); unary/rem/sign contexts carry ~nothing; the
 only modeling slack was the unary adaptation lag (now shipped as v6).
+
+### Rejected: mode 16/17 second-order significance contexts (5-neighbor flags)
+BRUSHIE_ENTROPY=17 (renumbered from 16 after geom-lab's flat-block base mode
+took 16; BRUSHIE_SIG2PARENT=1 crosses with the parent gate). Fixed-q 16-image
+sums: +4.55%..+5.95% vs mode 8. The 32/64-context adaptive model never
+converges at band sizes; every context-richer variant (13/15/17) loses to
+adaptation dilution. The v4/v5 sig context set is a hard local optimum.
+
+### Benchmark: rANS/tANS prototype vs binary range coder (proto/)
+Full table in proto/RESULTS.md. On real v6 symbol streams (kodak01 512px,
+q50: 19 bands / 360,970 symbols; q75: 471,530 symbols):
+- range coder: 25,713 B (q50), ~6.4 ns/sym enc, ~12 ns/sym dec.
+- rANS adaptive (12-bit probs, LIFO encode + causal decode): **24,984 B
+  (-2.8%)**, ~11 ns/sym enc incl. adaptation pre-pass, **~5.6 ns/sym dec
+  (2.1x faster)**. q75: -2.2%, same speed ratio.
+- rANS static per band: +3.5% (1.6-2.0KB probability headers exceed the
+  ~0 adaptation-lag savings) — rejected at whole-band granularity.
+- tANS table lookup adds nothing for a binary alphabet (one compare in rANS).
+Verdict: rANS-adaptive is the v7 coder candidate (density -2.2..-2.8% at
+every gate + 2x decode speed, at ~1.5x encoder coder cost from the pre-pass;
+single-pass alternative = mirrored future-neighbor contexts). Integration
+decision deferred to orchestrator/speed-lab.
