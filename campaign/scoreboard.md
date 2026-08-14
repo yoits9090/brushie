@@ -85,3 +85,13 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
 - 2026-08-13/14: speed-lab: branchless range coder + in-place 5/3 lifting
   (-56MB/encode zeroing) + persistent thread pool landed, byte-identical;
   fixing inverse_level odd-dim corruption found by the refactor.
+
+- 2026-08-14: geom-lab v8 UI-path stage A/B simulations: palette prequant
+  (K=8: -37% bytes, -0.046 metric — AA fringe is gate-rewarded), full-res
+  edge maps (edge values 5x too expensive), naive block-DCT (5-25x worse
+  without prediction) all rejected pre-C++. Chat .970 ctx bound = 1,095B
+  (vs 2,358B current). SCOPE DECISION: QPARAMS/photo polish now; AV1-lite
+  DEFERRED. RE-EVALUATION TRIGGER (recorded 2026-08-14): after rANS v7 +
+  directional text contexts + quant retune land, measure chat .970 —
+  if > 1,600B -> greenlight AV1-lite (multi-day, sub-agents);
+  if <= 1,400B -> wavelet path wins, AV1-lite dropped permanently.
