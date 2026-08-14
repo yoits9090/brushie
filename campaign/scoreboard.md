@@ -113,6 +113,18 @@ overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
 - M3 activity: closed under every real gate (+0.6..+74.4%). RDO: still loses
   (+0.9..+12.6%) - needs real-metric weights (handed off).
 
+## v7 rANS SHIPPED TO MAIN (2026-08-14, coder-lab 31b2f4a, orchestrator merge 81e6ed6)
+- Gate-matched quick harness: **8,400 / 15,264 / 33,966** vs frozen v5
+  9,120/16,162/35,380 = **-7.9% / -5.6% / -4.0%**; 4/4 coverage. Decode wall
+  13.9/13.7/16.1 vs v6 16.3/18.4/21.9 (~15-25% faster). Chat tiny-stream
+  fixed-q -12.8..-14.6% (range-coder termination/convergence overhead gone).
+- Verified: pixels identical at every q, v5/v6 streams byte-identical, fuzz
+  clean, modes 13-17 roundtrip, tests pass. Default backend now rANS
+  (BRUSHIE_RANS=0 forces v6 range coder). Mode 18 text-context shot rejected
+  (+1.3..2.4% gate-matched; mode 12 already captures text structure; chat
+  context-bound judged unreachable via adaptive dilution).
+- Pending: main quick-harness confirmation run (campaign_v7_confirm).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
