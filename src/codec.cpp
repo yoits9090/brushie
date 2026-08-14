@@ -851,20 +851,6 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
     const std::uint64_t v = abs_sum / nonzero;
     while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
   }
-  if (std::getenv("BRUSHIE_DEBUG_K0")) {
-    std::int64_t mn = 1 << 30, mx = -(1 << 30);
-    std::int64_t sum = 0;
-    std::uint64_t nzc = 0;
-    for (std::uint32_t i = 0; i < w * h; ++i) {
-      mn = std::min<std::int64_t>(mn, band[i]);
-      mx = std::max<std::int64_t>(mx, band[i]);
-      if (band[i] != 0) { nzc++; sum += band[i] < 0 ? -band[i] : band[i]; }
-    }
-    std::fprintf(stderr, "K0DBG mode=%u w=%u h=%u step? k0=%d mean|q|=%lld (%lld/%llu) min=%lld max=%lld\n",
-                 mode, w, h, k0, nzc ? sum / static_cast<std::int64_t>(nzc) : 0,
-                 static_cast<std::int64_t>(sum), static_cast<unsigned long long>(nzc),
-                 static_cast<long long>(mn), static_cast<long long>(mx));
-  }
   out.push_back(static_cast<std::uint8_t>(k0));
   RangeEncoder enc(out);
   BandProbs probs;

@@ -234,6 +234,94 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                             q += p
                         dest[y * stride + x] = q
         return
+    if mode == 16:
+        # flat-block base mode (v6): flags 0..3, block-value sig 4..7 +
+        # sign 57..60, non-flat coeffs sig 8..15 / sign 16..19, unary
+        # 20..43, rem 44..56, separate vk/k adaptation.
+        kB = 4
+        bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
+        flat = [0] * (bw * bh)
+        bval = [0] * (bw * bh)
+        bres = [0] * (bw * bh)
+        for by in range(bh):
+            for bx in range(bw):
+                fctx = 0
+                if bx > 0 and flat[by * bw + bx - 1]: fctx += 1
+                if by > 0 and flat[(by - 1) * bw + bx]: fctx += 2
+                flat[by * bw + bx] = dec.bit(probs, fctx, "blk16")
+        vk = 0
+        v_mag_sum, v_mag_count = 0, 0
+        for by in range(bh):
+            for bx in range(bw):
+                idx = by * bw + bx
+                y0, x0 = by * kB, bx * kB
+                y1, x1 = min(th, y0 + kB), min(tw, x0 + kB)
+                if flat[idx]:
+                    pv = 0
+                    if bx > 0 and flat[idx - 1]: pv = bval[idx - 1]
+                    elif by > 0 and flat[idx - bw]: pv = bval[idx - bw]
+                    lr = bres[idx - 1] if (bx > 0 and flat[idx - 1]) else 0
+                    ar = bres[idx - bw] if (by > 0 and flat[idx - bw]) else 0
+                    vctx = 4 + (1 if lr != 0 else 0) + (2 if ar != 0 else 0)
+                    rv = 0
+                    if dec.bit(probs, vctx, "sig16v"):
+                        sctx = 57 + (1 if lr < 0 else 0) + (2 if ar < 0 else 0)
+                        sign = dec.bit(probs, sctx, "sign16v")
+                        mean1 = (abs(lr) + abs(ar)) // 2 + 1
+                        nk = 0
+                        while nk < 12 and (1 << (nk + 1)) <= mean1: nk += 1
+                        kk = max(nk, vk)
+                        qq = 0
+                        while True:
+                            if dec.bit(probs, unary_idx(version, mode, qq, 0), "unary"): break
+                            qq += 1
+                        m = qq << kk
+                        for i in range(kk):
+                            m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
+                        rv = m + 1
+                        if sign: rv = -rv
+                        v_mag_sum += m
+                        v_mag_count += 1
+                        if v_mag_count == 32:
+                            nk2 = 0
+                            vv = v_mag_sum // 32
+                            while nk2 < 12 and (1 << (nk2 + 1)) <= vv: nk2 += 1
+                            vk = nk2; v_mag_sum = 0; v_mag_count = 0
+                    bres[idx] = rv
+                    bval[idx] = pv + rv
+                    for yy in range(y0, y1):
+                        for xx in range(x0, x1):
+                            dest[yy * stride + xx] = bval[idx]
+                    continue
+                for yy in range(y0, y1):
+                    for xx in range(x0, x1):
+                        s = dec.bit(probs, 8 + sig_context(dest, stride, xx, yy), "sig")
+                        q = 0
+                        if s:
+                            sign = dec.bit(probs, 16 + sign_context(dest, stride, xx, yy), "sign")
+                            qq = 0
+                            while True:
+                                if dec.bit(probs, unary_idx(version, mode, qq, 0), "unary"): break
+                                qq += 1
+                            m = qq << k
+                            for i in range(k):
+                                m |= dec.bit(probs, rem_idx(version, mode, i), "rem") << i
+                            q = m + 1
+                            if sign: q = -q
+                            mag_sum += m
+                            mag_count += 1
+                            if mag_count == 64:
+                                v = mag_sum // 64
+                                nk = 0
+                                while nk < 12 and (1 << (nk + 1)) <= v: nk += 1
+                                k = nk; mag_sum = 0; mag_count = 0
+                        a = dest[yy * stride + xx - 1] if xx > 0 else 0
+                        b = dest[(yy - 1) * stride + xx] if yy > 0 else 0
+                        c = dest[(yy - 1) * stride + xx - 1] if (xx > 0 and yy > 0) else 0
+                        p = a if yy == 0 else (b if xx == 0 else median_predict(a, b, c))
+                        q += p
+                        dest[yy * stride + xx] = q
+        return
     for y in range(th):
         for x in range(tw):
             pv = parent_at(parent, parent_stride, parent_w, parent_h, x, y)
@@ -383,6 +471,8 @@ def audit_stream(path: Path):
             cursor = 13
             secs = [size_h, size_v, psize - 13 - size_h - size_v]
             for bi in range(3):
+                if modes[bi] == 0:
+                    continue
                 sec = payload[cursor:cursor + secs[bi]]
                 cursor += secs[bi]
                 probs = [2047] * 65  # each section is its own decode_band_arith call
