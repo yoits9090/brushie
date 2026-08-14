@@ -2113,6 +2113,85 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     BRUSHIE_TRACK_SCOPE("encode", "input_planes");
     input_planes(image, planes, effective.threads);
   }
+  // UI palette probe (v8 research): BRUSHIE_UI_PALETTE=K quantizes the input
+  // to a K-color palette (deterministic k-means-lite) before the transform.
+  // Encode-side only: no stream change, no decode change. For UI content the
+  // anti-aliased fringe collapses into crisp palette edges, which the wavelet
+  // codes with far fewer coefficients.
+  static const int ui_palette_k = []() {
+    const char* e = std::getenv("BRUSHIE_UI_PALETTE");
+    return e ? std::atoi(e) : 0;
+  }();
+  if (ui_palette_k > 0 && !has_alpha) {
+    const unsigned channels_in = image.channels == 4 ? 4u : 3u;
+    const std::size_t stride_in = image.stride ? image.stride : static_cast<std::size_t>(image.width) * channels_in;
+    const int K = std::min(ui_palette_k, 32);
+    const std::size_t n = static_cast<std::size_t>(image.width) * image.height;
+    std::vector<std::array<double, 3>> cents(K);
+    {
+      // deterministic k-means-lite: init from a fixed-stride sample, 10 iters
+      std::vector<std::array<double, 3>> samples;
+      samples.reserve(std::min<std::size_t>(n, 8192));
+      for (std::size_t i = 0; i < n; i += std::max<std::size_t>(1, n / 8192))
+        samples.push_back({static_cast<double>(image.rgb[i * 3 + 0]),
+                           static_cast<double>(image.rgb[i * 3 + 1]),
+                           static_cast<double>(image.rgb[i * 3 + 2])});
+      for (int k = 0; k < K; ++k) cents[k] = samples[static_cast<std::size_t>(k) * samples.size() / K];
+      for (int it = 0; it < 10; ++it) {
+        std::vector<std::array<double, 3>> acc(K, std::array<double, 3>{0.0, 0.0, 0.0});
+        std::vector<std::uint64_t> cnt(K, 0);
+        for (const auto& s : samples) {
+          double best = 1e30;
+          int bk = 0;
+          for (int k = 0; k < K; ++k) {
+            const double d = (s[0] - cents[k][0]) * (s[0] - cents[k][0]) +
+                             (s[1] - cents[k][1]) * (s[1] - cents[k][1]) +
+                             (s[2] - cents[k][2]) * (s[2] - cents[k][2]);
+            if (d < best) { best = d; bk = k; }
+          }
+          acc[bk][0] += s[0]; acc[bk][1] += s[1]; acc[bk][2] += s[2];
+          ++cnt[bk];
+        }
+        for (int k = 0; k < K; ++k)
+          if (cnt[k]) {
+            cents[k][0] = acc[k][0] / cnt[k];
+            cents[k][1] = acc[k][1] / cnt[k];
+            cents[k][2] = acc[k][2] / cnt[k];
+          }
+      }
+    }
+    std::vector<std::array<std::uint8_t, 3>> pal(K);
+    for (int k = 0; k < K; ++k) {
+      pal[k][0] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][0])))));
+      pal[k][1] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][1])))));
+      pal[k][2] = static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, static_cast<double>(std::llround(cents[k][2])))));
+    }
+    // re-run the color transform on the palette-mapped pixels
+    parallel_for(image.height, effective.threads, [&](std::size_t yy) {
+      const std::uint8_t* row = image.rgb + yy * stride_in;
+      for (std::uint32_t x = 0; x < image.width; ++x) {
+        const std::uint8_t* p = row + x * channels_in;
+        int bk = 0;
+        double best = 1e30;
+        for (int k = 0; k < K; ++k) {
+          const double d = (p[0] - pal[k][0]) * (p[0] - pal[k][0]) +
+                           (p[1] - pal[k][1]) * (p[1] - pal[k][1]) +
+                           (p[2] - pal[k][2]) * (p[2] - pal[k][2]);
+          if (d < best) { best = d; bk = k; }
+        }
+        const int r = pal[bk][0], g = pal[bk][1], b = pal[bk][2];
+        const int co = r - b;
+        const int t = b + floor_div(co, 2);
+        const int cg = g - t;
+        const int y = t + floor_div(cg, 2);
+        const std::size_t i = yy * image.width + x;
+        planes[0][i] = y;
+        planes[1][i] = co;
+        planes[2][i] = cg;
+        planes[3][i] = 0;
+      }
+    });
+  }
   std::uint32_t cw = image.width, ch = image.height;
   if (subsample_chroma) {
     BRUSHIE_TRACK_SCOPE("encode", "chroma_ds");

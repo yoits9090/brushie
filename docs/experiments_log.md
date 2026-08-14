@@ -344,3 +344,50 @@ rejections).
 32 beats 16 by 14B on chat / 5B on meme at the gate, 8 loses. Not shipped
 because the block size is env-derived on both sides (not stream-safe);
 would need mode bytes 17/18 for a <1% win — not worth the format surface.
+
+## geom-lab v8 UI-path research (stage A/B simulations)
+
+Context: orchestrator greenlit the UI/text second representation (v8,
+palette + edge-map + wavelet-residual, target chat .970 < 1,200B). All
+simulations below run in Python on the chat at 512px; the current v6
+baseline is 2,358B @ 0.97081 (AVIF 889B @ 0.9797 with the local svt-av1).
+
+### Rejected: full-res edge map + edge values + wavelet residual (stage B)
+Palette+edge reconstruction alone (K=8 k-means, 8x8 flat blocks tol=10,
+grad>40 edges): 0.94638 ms_ssim, but the edge VALUES at full resolution
+dominate the cost (7,031 edge pixels; even 1B/pixel = 7KB). With residual
+at q20-40: 12.9-13.1KB total for 0.981-0.986 — 5x worse than the wavelet
+path. Full-res edge values are dead on arrival.
+
+### Rejected: encoder-side palette prequantization (BRUSHIE_UI_PALETTE)
+Deterministic k-means-lite K-color quantize BEFORE the transform (no
+stream/decode change). Chat q38: K=8: 1,493B @ 0.92513 (-37% bytes, -0.046
+metric); K=32: 2,165B @ 0.95007. The RD curve saturates well below the
+gate: k-means smears the saturated avatar colors, and the metric
+(11x11-windowed) genuinely measures the anti-aliased fringes that palette
+quantization destroys. The AA fringe is content the gate rewards, not
+noise to drop. Probe kept env-gated; rejected.
+
+### Rejected: naive 8x8 block-DCT (stage C pre-simulation)
+Uniform-quantized DCT, median-predicted DCs: qstep=4: ~84KB @ 0.9786 —
+per-block AC coding with no cross-block prediction is 5-25x worse than the
+wavelet at every quality (86% AC zeros still cost 1.12 bits/symbol x
+176K symbols). Without directional intra prediction + skip modes + RDO the
+block transform loses to the wavelet's global zero structure.
+
+### Measured: base/detail reallocation at the .970 gate (chat)
+Finer base LL + coarser detail (BRUSHIE_QPARAMS bm=0.2): 2,434B @ 0.97210
+vs default q39 2,461B @ 0.97103 — a small but real curve shift on UI
+content (flat-area error is base-LL-dominated: flat dark areas err 2.96
+vs AVIF 2.12). Not a moonshot; the harness does not sweep QPARAMS in
+quick mode (broad bench profiles would capture it).
+
+### Verdict for the v8 UI path
+The palette+edge-map+residual design as specified cannot reach the target:
+the metric rewards the AA fringe + saturated colors that palette/edge
+coding destroys or pays full price for. The only representation that beats
+the wavelet on text is AV1-style directional intra prediction with skip
+modes + RDO (multi-week build; estimated chat .970 outcome 1,500-1,800B,
+not <1,200B, absent per-block RDO). Simulating it faithfully (mode
+selection, prediction residuals, flat-skip) is the next step before any
+C++ — see geom-lab report #4 for the recommendation.
