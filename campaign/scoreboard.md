@@ -155,6 +155,19 @@ block-size modes 21/22/23 (stream-safe, per-band trial), QPARAMS base_fine
 profiles (bench.py), entropy_audit walking all modes + rANS. Verified: tests,
 v5/v6 compat, QFINE coexist.
 
+## Mode 24 tiny-state block sections (2026-08-14, coder-lab 28f4f38, merged)
+- Sparse-band auto-selection writes 24 instead of 12 under the v7 core:
+  1-4 byte rANS initial state (k0 top 2 bits = state-size flag; k0&15 = Rice).
+  chat 512px q38 b32: 1,797 -> 1,785B (-0.67%); photos neutral (-0.018%).
+  Old streams decode unchanged (k0<=12 never carries the flag); fuzz clean.
+- Merge note: coder-core refactor (encode_band_arith_impl with prob_init/
+  band_orient) taken wholesale; geom block-size modes 21/22/23 + mode 16 +
+  QFINE + v7 all preserved in the merged core. Verified: v7 default
+  (18,253B vs 18,886 rANS-off on smoke), v5 compat, tests pass.
+- In flight: v7 confirm harness + quant-retune harness re-runs
+  (BRUSHIE_QPARAMS=6,1.4,0.95,1.8,1.2,2.5,2.0,0.4 + BRUSHIE_LEVELMUL=lF:0.82)
+  after WIP-poisoned runs were discarded.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
