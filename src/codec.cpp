@@ -1200,15 +1200,11 @@ static void encode_band_arith_impl(const std::int32_t* band, std::uint32_t w,
   int k = k0;
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
-  if (mode == 12) {
-    // Block significance flags (16x16): a zero block costs one context bit
-    // and skips every coefficient symbol inside it (EBCOT-style codeblocks).
-    static const std::uint32_t kB = []() {
-      const char* e = std::getenv("BRUSHIE_BLOCK");
-      if (!e) return 16u;
-      const int v = std::atoi(e);
-      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
-    }();
+  if (mode == 12 || mode == 21 || mode == 22 || mode == 23) {
+    // Block significance flags: zero blocks cost one context bit and skip
+    // every coefficient symbol inside them. Block size carried by the mode
+    // byte: 12=16x16, 21=8x8, 22=32x32, 23=64x64 (stream-safe selection).
+    const std::uint32_t kB = mode == 21 ? 8u : (mode == 22 ? 32u : (mode == 23 ? 64u : 16u));
     const std::uint32_t bw = (w + kB - 1) / kB;
     const std::uint32_t bh = (h + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -1694,13 +1690,8 @@ static bool decode_band_arith_impl(const std::uint8_t* data, std::size_t size,
     parent_block_features(parent, parent_stride, parent_w, parent_h, 1, step,
                           tw, th, pclass_arr, pmean_arr);
   }
-  if (mode == 12) {
-    static const std::uint32_t kB = []() {
-      const char* e = std::getenv("BRUSHIE_BLOCK");
-      if (!e) return 16u;
-      const int v = std::atoi(e);
-      return (v == 8 || v == 32 || v == 64) ? static_cast<std::uint32_t>(v) : 16u;
-    }();
+  if (mode == 12 || mode == 21 || mode == 22 || mode == 23) {
+    const std::uint32_t kB = mode == 21 ? 8u : (mode == 22 ? 32u : (mode == 23 ? 64u : 16u));
     const std::uint32_t bw = (tw + kB - 1) / kB;
     const std::uint32_t bh = (th + kB - 1) / kB;
     std::vector<std::uint8_t> block_nz(bw * bh, 0);
@@ -3018,14 +3009,14 @@ bool encode(const ImageView& image, const EncodeOptions& options,
         const std::uint32_t st_p = refs[i].layer > 0 ? chosen_step[parent_of(i)] : 1;
         encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
                           nz_list[i], as_list[i], par, par_stride, par_w, par_h, 12,
-                          st_c, st_p, p16);
+                          refs[i].band, st_c, st_p, p16);
         encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
                           nz_list[i], as_list[i], par, par_stride, par_w, par_h, 21,
-                          st_c, st_p, p8);
+                          refs[i].band, st_c, st_p, p8);
         if (refs[i].w >= 64 && refs[i].h >= 64) {
           encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
                             nz_list[i], as_list[i], par, par_stride, par_w, par_h, 22,
-                            st_c, st_p, p32);
+                            refs[i].band, st_c, st_p, p32);
           if (p32.size() < p16.size() && p32.size() < p8.size()) c.mode = 22;
         }
         if (c.mode == 12 && p8.size() < p16.size()) c.mode = 21;
