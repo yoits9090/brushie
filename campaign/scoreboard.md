@@ -245,6 +245,23 @@ images (deepens the coverage story).
   <=1,400B => AV1-lite resolved DEAD; blind rig is the text-content claim
   vehicle.
 
+## Novelty book CLOSED (2026-08-14, commit acc4e55)
+SIM C-lite (high-q gradient patches): DEAD with the structural reason:
+LINEAR gradients have ZERO 5/3 detail energy (wavelet high-pass kills ramps
+exactly); quadratic gradients become constant detail coefficients that
+Rice-k codes cheaply; the base is median-predicted near-optimally. There is
+NO smooth-gradient tax in a wavelet codec - the JXL spline motivation is
+specific to block-DCT codecs. Patch field explains ~5% of L1 detail energy
+(corr 0.23); misfit explodes the base sig pass.
+Four representation families now measured + rejected with the symbol-exact
+sim engine: cross-band LS (A), adaptive context trees (B: -2.3% stream,
+BELOW BAR, banked for re-test), edge splines (C), gradient patches (C-lite).
+SIM B (MANIAC) is the only banked re-test candidate. The engine
+(scripts/novelty_sim.py) is committed + documented for reuse.
+ARCHITECTURAL CONCLUSION: the wavelet + fixed contexts + rANS + compact
+format IS the architecture; remaining levers are all in the queue (v9,
+SIMD, re-gate defaults, MANIAC re-test).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
