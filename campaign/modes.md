@@ -26,6 +26,7 @@ Collisions have already happened once (mode 16/17 renumber); prevent the next.
 | 15 | coder | energy-bucket sig ctx - REJECTED (+0.64..4.39%), kept env-gated |
 | 16 | geom | flat-block base (trial vs 3, shipped in main) |
 | 17 | coder | second-order sig ctx - REJECTED (+4.55..5.95%), kept env-gated |
+| 24 | coder | tiny-state block mode (mode-12 layout + 1-4B rANS init via k0 flag bits) - SHIPPED v7 (-0.67% chat, -0.02% photos) |
 | 18 | coder | (reserved: BRUSHIE_BLOCK size variant - NOT stream-safe yet) |
 | 19 | geom | run-mode detail - REJECTED (loses to 12), reverted |
 
