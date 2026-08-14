@@ -376,3 +376,12 @@ mode-12 flip enabled for both); without the flip mode 18 is +22..29% worse
 The 1,095B chat context bound is unreachable via adaptive-context variants
 (dilution); the real chat levers remain rANS v7 + quant retune. Kept behind
 BRUSHIE_ENTROPY=18.
+
+### Shipped: mode 24 tiny-state block sections (v7)
+Mode 24 = mode-12 block layout with a 1-4 byte rANS initial state: the k0
+byte's top 2 bits carry the state size (k0 & 15 keeps the Rice parameter).
+Sparse-band auto-selection writes 24 instead of 12 under the v7 rANS core.
+Measured: chat 1,797 -> 1,785B (-0.67%), 16-image photo corpus q50 sum
+213,935 -> 213,897B (-0.018%); fuzz 1500 clean; unit tests pass; old streams
+decode unchanged (k0 <= 12 never carries the flag). Registry: mode 19 was
+geom-lab's rejected run-mode probe; tiny-state block mode claims 24.

@@ -121,11 +121,11 @@ class RansDec:
     # v7 binary rANS decoder (mirror of src/codec.cpp RansDecoder): 12-bit
     # probabilities, L=2^16 renorm, little-endian 16-bit chunks after the
     # 4-byte initial state.
-    def __init__(self, data, size, audit):
+    def __init__(self, data, size, audit, state_bytes=4):
         self.data, self.size, self.pos = data, size, 0
         self.audit = audit
         self.x = 0
-        for _ in range(4):
+        for _ in range(state_bytes):
             self.x = (self.x << 8) | self.read_byte()
 
     def read_byte(self):
@@ -213,6 +213,8 @@ def walk_band(dec, probs, audit, dest, stride, tw, th, version, mode,
               use_prediction, parent, parent_stride, parent_w, parent_h,
               pass_bits):
     k = dec.data[0]
+    if mode == 24 and version >= 7:
+        k = k & 15
     # note: dec was constructed on data[1:], so data[0] here == original k0
     return _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
                  use_prediction, parent, parent_stride, parent_w, parent_h, k)
@@ -345,7 +347,7 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
     if (parent_mag_mode(mode) or os.environ.get("BRUSHIE_AUDIT_STATS")) and use_parent:
         pclass_arr, pmean_arr = parent_block_features(
             parent, parent_stride, parent_w, parent_h, step_p, step_c, tw, th)
-    if mode == 12:
+    if mode in (12, 24):
         kB = 16
         bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
         block_nz = [0] * (bw * bh)
@@ -637,7 +639,8 @@ def audit_stream(path: Path):
                     ph = pl[3] if bi == 0 else (pl[1] // 2)
                 par_step = steps.get((channel, 0, 0), 1) if layer == 1 \
                     else steps.get((channel, layer - 1, bi + 1), 1)
-                dec = (RansDec(sec[1:], len(sec) - 1, audit) if version >= 7
+                sb = ((sec[0] >> 4) + 1) if (modes[bi] == 24 and version >= 7) else 4
+                dec = (RansDec(sec[1:], len(sec) - 1, audit, sb) if version >= 7
                        else Dec(sec[1:], len(sec) - 1, audit))
                 row["k0"] = sec[0] if bi == 0 else row["k0"]
                 _walk(dec, probs, audit, detail[channel][idx][bi + 1],
@@ -674,7 +677,8 @@ def audit_stream(path: Path):
                     par = detail[channel][len(sh) - (layer - 1)][band]
                     pw = (pl[0] // 2) if band == 1 else (pl[2] if band == 2 else pl[0] // 2)
                     ph = pl[3] if band == 1 else (pl[1] // 2 if band in (2, 3) else pl[1] // 2)
-            dec = (RansDec(payload[1:], psize - 1, audit) if version >= 7
+            sb = ((payload[0] >> 4) + 1) if (mode == 24 and version >= 7) else 4
+            dec = (RansDec(payload[1:], psize - 1, audit, sb) if version >= 7
                    else Dec(payload[1:], psize - 1, audit))
             row["k0"] = payload[0]
             par_step = (steps.get((channel, 0, 0), 1) if layer == 1
