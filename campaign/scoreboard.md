@@ -168,6 +168,22 @@ v5/v6 compat, QFINE coexist.
   (BRUSHIE_QPARAMS=6,1.4,0.95,1.8,1.2,2.5,2.0,0.4 + BRUSHIE_LEVELMUL=lF:0.82)
   after WIP-poisoned runs were discarded.
 
+## REAL-METRIC RE-GATE v2: TOP GATES MOVE (2026-08-14, metric-lab 49982cd)
+Mean bytes, 163 images, equal gates, v7 binary, encoder-side knobs only:
+| Gate | v1 grid | final | gain | best comp | gap (was) |
+|---|---:|---:|---:|---:|---:|
+| S2-85 | 89,272 | 80,626 | -9.7% | JXL 52,408 | 1.54x (1.70x) |
+| S2-90 | 182,610 | 126,872 | -30.5% | WebP 72,159 | 1.76x (2.53x) |
+| BA-0.6 | 164,125 | 119,055 | -27.5% | JXL 56,120 | 2.12x (2.92x) |
+| BA-0.4 | 223,644 | 167,325 | -25.2% | JXL 79,705 | 2.10x (2.81x) |
+Decomposition: v7 rANS -1.1..-2.4%; QFINE+LEVELMUL ladder -7.5% (S2-85) to
+-20.2% (S2-90) - the q99->q100 cliff is filled (QFINE spans 96K-204K inside
+87K-245K on kodak01; LEVELMUL rungs cover integer-collapse gaps); per-group
+STEPMUL +-11.2% mean (454/489 improved, 0/489 gate violations). Pattern
+holds: finest finer, mid coarser. Honest caveat: gains are harness-side
+per-image adaptivity; folding the pattern into quant_params defaults =
+coder-lab task. Box toolchain installed on colab-lab.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
