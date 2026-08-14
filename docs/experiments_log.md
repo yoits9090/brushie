@@ -240,25 +240,119 @@ Findings on kodak01 detail bands: sig is the only pass with real context
 structure (ctx-entropy 99,859 vs zero-order 124,099 bits at q50, adaptive
 model tracks it within 0.3%); unary/rem/sign contexts carry ~nothing; the
 only modeling slack was the unary adaptation lag (now shipped as v6).
+## geom-lab session (lab/geom branch, CAPS campaign)
 
-### Rejected: mode 16/17 second-order significance contexts (5-neighbor flags)
-BRUSHIE_ENTROPY=17 (renumbered from 16 after geom-lab's flat-block base mode
-took 16; BRUSHIE_SIG2PARENT=1 crosses with the parent gate). Fixed-q 16-image
-sums: +4.55%..+5.95% vs mode 8. The 32/64-context adaptive model never
-converges at band sizes; every context-richer variant (13/15/17) loses to
-adaptation dilution. The v4/v5 sig context set is a hard local optimum.
+Baseline (lab_0, committed): quick harness 9,120 / 16,162 / 35,380 — exact
+match vs frozen v5 baseline. All experiments below measured with
+`python3 scripts/enterprise_eval.py --quick` + per-image audits via
+scripts/byte_audit.py and a single-image iter harness (bytes + windowed
+MS-SSIM at the exact harness quality/base settings).
 
-### Benchmark: rANS/tANS prototype vs binary range coder (proto/)
-Full table in proto/RESULTS.md. On real v6 symbol streams (kodak01 512px,
-q50: 19 bands / 360,970 symbols; q75: 471,530 symbols):
-- range coder: 25,713 B (q50), ~6.4 ns/sym enc, ~12 ns/sym dec.
-- rANS adaptive (12-bit probs, LIFO encode + causal decode): **24,984 B
-  (-2.8%)**, ~11 ns/sym enc incl. adaptation pre-pass, **~5.6 ns/sym dec
-  (2.1x faster)**. q75: -2.2%, same speed ratio.
-- rANS static per band: +3.5% (1.6-2.0KB probability headers exceed the
-  ~0 adaptation-lag savings) — rejected at whole-band granularity.
-- tANS table lookup adds nothing for a binary alphabet (one compare in rANS).
-Verdict: rANS-adaptive is the v7 coder candidate (density -2.2..-2.8% at
-every gate + 2x decode speed, at ~1.5x encoder coder cost from the pre-pass;
-single-pass alternative = mirrored future-neighbor contexts). Integration
-decision deferred to orchestrator/speed-lab.
+### Shipped: per-chunk adaptive base mode (mode 16 flat-block, trial-selected)
+Base-LL chunks now trial-encode median-predict (mode 3) vs a new 4x4
+flat-block mode 16 (flags + flat values predicted from left/above blocks +
+median residuals; contexts 0..3/4..7/57..60, rest shared layout) and keep
+the smaller payload; the mode byte carries the choice (deterministic,
+decoder-side cost zero). Both modes reconstruct bit-identical quantized
+bands, so this is pure byte selection.
+Quick harness (lab_1_base16): 9,116 / 16,143 / 35,352 vs 9,120 / 16,162 /
+35,380 (-0.04% / -0.12% / -0.08%). Per image at gate qualities:
+chat .985 3,593 -> 3,519 (-2.1%), chat .995 7,128 -> 7,015 (-1.6%),
+chat .970 2,429 -> 2,424, meme .970 1,874 -> 1,871, kodak02 .970
+16,870 -> 16,864, kodak01 unchanged. Mode 16 wins when the quantized base
+has flat 4x4 runs at moderate step sizes (text UI at high quality); mode 3
+stays for noisy/photo bases.
+Tests + 300-iteration fuzz pass; old v1-v5 streams still decode.
+
+### Rejected: plane predictor base modes (13/14, BRUSHIE_BASE)
+p = a+b-c unclamped/clamped for the base LL. Meme base chroma (gradient
+sinusoid) barely moved (491 -> 494B); chat/photos neutral-to-worse. Residual
+entropy analysis on dumped quantized bases: median 2.2 vs plane 2.0 b/coef
+on meme luma (still loses after coder overhead); on the chat base median is
+already best (1.36 b/coef). Directional continuation predictors (2A-AA,
+2B-BB, planar switch) beat median only on chat chroma by ~0.15 b/coef, not
+enough to survive the mode overhead. Kept behind BRUSHIE_BASE for sweeps.
+
+### Rejected: base-band RLE (measured in Python, never coded)
+Zero-run RLE on median residuals costs ~269B vs mode-3's 179B on chat base
+luma (134 nonzero values in 704 coeffs at 19% nz) and loses on the meme
+base too. The adaptive arithmetic sig bits are already cheaper than
+varint runs at these densities.
+
+### Rejected: 4x4/8x8 block polynomial base fitting (measured in Python)
+LSQ (mean, dx, dy) per block on the quantized base: residual entropy
+3.58/4.83 b/coef (4x4/8x8) vs median-predict 2.2 on meme luma; bar edges +
+sinusoid make block fits overshoot. Not coded.
+
+### Analysis: inter-band value prediction on detail bands (chat, q38)
+Dumped all bands; tested parent-value and parent-gradient (x/y) predictions
+in child-quantized units. All lose on the sparse text detail bands:
+L1-H c0 nz 8% ent 0.60 b/coef -> parent_val nz 100% ent 2.06; parent_gx
+1.63, parent_gy 1.55. L2/L3 bands similar. The chat detail bands are
+already sparse (4-23% nz) and the parent-significance contexts are doing
+the work; predicting VALUES from the parent re-injects the parent DC into
+every coefficient. Conclusion: the chat/meme gap vs AVIF is representational
+(wavelet vs block prediction), not base- or parent-prediction overhead.
+
+### Shipped: merged band-4 chunks with absent sections (empty D/V)
+H/V detail pairs now merge even when the D band is inactive: a mode byte of
+0 marks an absent section (band left zero at decode; H always present).
+Saves one 16B directory entry + one k0/block-flag header per empty section.
+Quick harness (lab_2_merge): 9,110 / 16,139 / 35,350 vs lab_1 9,116 /
+16,143 / 35,352. Per image at gates: meme .970 1,871 -> 1,859 (-12),
+kodak01 15,306 -> 15,297, chat 2,424 -> 2,421, kodak02 16,864 -> 16,861.
+Bit-identical reconstruction. Old v5 streams (all sections present) decode
+unchanged; validation tightened for absent markers. Fuzz clean.
+
+### Rejected: grain synthesis (M6) — zero-noise-blocks + decoder noise
+BRUSHIE_GRAIN_ZERO probe zeroes noise-like 8x8 blocks (max|q|<=1-2,
+significance-map lag-1 autocorr < 0.15-0.20, mean~0) in the finest luma
+detail level before coding. kodak01 q40: -941B (-6.1%) for ms_ssim 0.97023
+-> 0.96738; kodak02 q76: -925B for 0.97003 -> 0.96848. Decoder-side
+synthetic noise (pixel-space probe, sigma 3/5/7, deterministic PRNG) makes
+ALL THREE metrics worse, monotonically in sigma (kodak01: ms_ssim
+0.96738->0.96550->0.96231; SSIMULACRA2 29.1->28.4->26.8; Butteraugli
+2.990->3.016->3.107). Mechanism: independent synthetic noise adds
+reconstruction variance without adding covariance, so windowed SSIM/S2
+drop, and Butteraugli 3-norm punishes the noise directly. The zeroed
+blocks were also not pure noise (|q|<=2 texture carries real metric
+weight). Verdict: byte/quality slope of grain-zeroing ~= slope of coding
+the coefficients (-0.003 ms_ssim/KB); synthesis only loses. Retest only
+behind a noise-rewarding perceptual metric (LPIPS/blinded humans).
+Probe kept behind BRUSHIE_GRAIN_ZERO for that retest.
+
+### Rejected: chroma-from-luma (M5, CCLM-style)
+Measured collocated luma 2x2-block vs chroma detail on dumped bands
+(chat q38, kodak02 q76): fitted alpha ~ 0, corr in [-0.19, +0.16] on
+kodak02 and ~0 on chat. Chroma detail at these levels carries smooth
+color variation luma does not predict; where chroma fires (color edges)
+the coefficients are already sparse/cheap. Not implemented.
+
+### Rejected: block-DCT of the base band (measured in Python)
+4x4/8x8 orthonormal DCT on the quantized base (chat + meme): total
+entropy-equivalent 1.90-3.31 b/coef vs median-predict 0.64-2.16 b/coef.
+Block boundaries + coarse sinusoid beat any AC-concentration gain.
+Not implemented.
+
+### Rejected: levelmul reallocation for chat (BRUSHIE_LEVELMUL sweep)
+l1:0.7 etc. move along the same RD curve (2524B @ 0.97260 vs default q40
+2490B @ 0.97208; l5:1.4,l4:1.2 = identical to default). The empirical
+step table remains a local optimum (consistent with the v4 table-sweep
+rejections).
+
+### Rejected: BRUSHIE_BLOCK 8/32 for mode-12 detail bands
+32 beats 16 by 14B on chat / 5B on meme at the gate, 8 loses. Not shipped
+because the block size is env-derived on both sides (not stream-safe);
+would need mode bytes 17/18 for a <1% win — not worth the format surface.
+
+### Shipped: v7 rANS backend (BRUSHIE_RANS=1, stream version 7)
+Binary rANS (M=4096 prob scale, L=2^16 renorm, 12-bit adaptive
+probabilities) replaces the binary range coder for v7 streams; the encoder
+runs a model pass that records (prob, bit) and a reverse rANS pass, the
+decoder adapts live in raster order (contexts unchanged). v5/v6 streams
+decode with the old core unchanged. Measured: kodak01 512px q30/50/75:
+-3.3%/-2.8%/-2.2%; fixed-q 16-image corpus sums q30/50/75/90:
+-6.1%/-5.5%/-4.4%/-3.3%; synthetic chat q25/40/55/70: -14.6%/-14.6%/-13.8%/
+-12.8% (tiny chunks win the most: 4B termination vs range-coder cache
+chains + exact probabilities). 1500-iteration fuzz clean; modes 13/14/15/17
+roundtrip in v7; unit tests pass. Pixels identical at every q.
