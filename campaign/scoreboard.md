@@ -148,6 +148,13 @@ meme 1,796->1,484 (-17.4%), kodak01 15,204->14,548 (-4.3%),
 kodak02 16,739->15,764 (-5.8%). Block-size trial (modes 21/22/23,
 stream-safe) adds -9..-14B on chat/meme.
 
+## Main state (2026-08-14, after geom merge e8c2cf2)
+Quick harness: **8,397 / 15,257 / 33,950** (rANS + block-size; -7.9/-5.6/-4.0%
+vs frozen). Main carries: v6 unary, v7 rANS default, QFINE ladder,
+block-size modes 21/22/23 (stream-safe, per-band trial), QPARAMS base_fine
+profiles (bench.py), entropy_audit walking all modes + rANS. Verified: tests,
+v5/v6 compat, QFINE coexist.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
