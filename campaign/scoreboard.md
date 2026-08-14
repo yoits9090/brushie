@@ -184,6 +184,19 @@ holds: finest finer, mid coarser. Honest caveat: gains are harness-side
 per-image adaptivity; folding the pattern into quant_params defaults =
 coder-lab task. Box toolchain installed on colab-lab.
 
+## Broad corpus, rANS v7 era (2026-08-14, geom-lab, 163 images)
+| | .970 | .985 | .995 |
+|---|---:|---:|---:|
+| frozen v5 broad | 11,527 | 21,498 | 54,831 |
+| v7 base | 10,894 | 21,137 | 56,209 |
+| v7 + QPARAMS profile | **10,611** | **20,385** | **53,218** |
+| vs frozen | -7.9% | -5.2% | -2.9% |
+489/489 candidates improved; base_fine profiles = 63 wins, -35.7KB (5.4% of
+total profile win; UI-content bm=0.2 finding generalizes to a photo slice).
+Blind-rig prep: v7 vs AVIF S2-70 head-to-head on 0817x2 = 55.7KB vs 44.3KB
+(1.26x - matches the landscape); AVIF can't clear S2-85 at crf>=16 on several
+images (deepens the coverage story).
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
