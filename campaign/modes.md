@@ -28,6 +28,9 @@ Collisions have already happened once (mode 16/17 renumber); prevent the next.
 | 17 | coder | second-order sig ctx - REJECTED (+4.55..5.95%), kept env-gated |
 | 18 | coder | (reserved: BRUSHIE_BLOCK size variant - NOT stream-safe yet) |
 | 19 | geom | run-mode detail - REJECTED (loses to 12), reverted |
+| 21 | geom | block-flag mode 8x8 blocks (stream-safe via mode byte, shipped with trial) |
+| 22 | geom | block-flag mode 32x32 blocks (stream-safe via mode byte, shipped with trial) |
+| 23 | geom | block-flag mode 64x64 blocks (stream-safe via mode byte, reserved) |
 
 ## UI/text second representation (geom-lab lead, v8)
 - 20+ reserved for palette/edge-map/directional modes; claim before shipping.

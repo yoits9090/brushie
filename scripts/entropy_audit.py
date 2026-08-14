@@ -277,8 +277,8 @@ def _walk(dec, probs, audit, dest, stride, tw, th, version, mode,
     if (parent_mag_mode(mode) or os.environ.get("BRUSHIE_AUDIT_STATS")) and use_parent:
         pclass_arr, pmean_arr = parent_block_features(
             parent, parent_stride, parent_w, parent_h, step_p, step_c, tw, th)
-    if mode == 12:
-        kB = 16
+    if mode in (12, 21, 22, 23):
+        kB = 21 if False else (8 if mode == 21 else (32 if mode == 22 else (64 if mode == 23 else 16)))
         bw, bh = (tw + kB - 1) // kB, (th + kB - 1) // kB
         block_nz = [0] * (bw * bh)
         for by in range(bh):

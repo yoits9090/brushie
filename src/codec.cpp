@@ -2692,6 +2692,42 @@ bool encode(const ImageView& image, const EncodeOptions& options,
       }
       if (nz_blocks * 10 <= bw * bh * 5) c.mode = 12;
     }
+    if (c.mode == 12 && refs[i].w >= 32 && refs[i].h >= 32) {
+      // block-size trial (v6): the block size is streamed via the mode byte,
+      // so per-band selection is safe. 16 (12) vs 8 (21) vs 32 (22); 64x64
+      // (23) skipped (rarely wins on these band sizes).
+      static const bool bsweep_on = []() {
+        const char* e = std::getenv("BRUSHIE_BSWEEP");
+        return !e || std::atoi(e) != 0;
+      }();
+      if (bsweep_on) {
+        std::vector<std::uint8_t> p16, p8, p32;
+        const std::int32_t* par = nullptr;
+        std::uint32_t par_stride = 0, par_w = 0, par_h = 0;
+        if (refs[i].layer > 0) {
+          const std::size_t pi = parent_of(i);
+          par = quant[pi].data();
+          par_stride = refs[pi].w;
+          par_w = refs[pi].w;
+          par_h = refs[pi].h;
+        }
+        const std::uint32_t st_c = chosen_step[i];
+        const std::uint32_t st_p = refs[i].layer > 0 ? chosen_step[parent_of(i)] : 1;
+        encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
+                          nz_list[i], as_list[i], par, par_stride, par_w, par_h, 12,
+                          st_c, st_p, p16);
+        encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
+                          nz_list[i], as_list[i], par, par_stride, par_w, par_h, 21,
+                          st_c, st_p, p8);
+        if (refs[i].w >= 64 && refs[i].h >= 64) {
+          encode_band_arith(quant[i].data(), refs[i].w, refs[i].h, false,
+                            nz_list[i], as_list[i], par, par_stride, par_w, par_h, 22,
+                            st_c, st_p, p32);
+          if (p32.size() < p16.size() && p32.size() < p8.size()) c.mode = 22;
+        }
+        if (c.mode == 12 && p8.size() < p16.size()) c.mode = 21;
+      }
+    }
     c.count = refs[i].w * refs[i].h;
     // Re-encode the committed quantized state into the chunk payload.
     std::vector<std::uint8_t> payload;
@@ -3196,7 +3232,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
       return false;
     }
     expected_payload_offset = offset + payload_size;
-    if (channel >= channels || band > 4 || mode < 3 || mode > 16 || step == 0 ||
+    if (channel >= channels || band > 4 || mode < 3 || mode > 23 || step == 0 ||
         ((tw == 0 || th == 0) && band != 4) || (band == 4 && (tw != 0 || th != 0)) ||
         count != static_cast<std::uint64_t>(tw) * th || layer > levels) {
       fail(error, "invalid CAPS chunk metadata");
@@ -3300,7 +3336,7 @@ static bool decode_v2(const std::uint8_t* data, std::size_t size,
         const std::uint32_t size_h = get_u32(payload + 5);
         const std::uint32_t size_v = get_u32(payload + 9);
         auto merged_mode_ok = [](std::uint8_t m) {
-          return m == 0 || (m >= 3 && m <= 16);
+          return m == 0 || (m >= 3 && m <= 23);
         };
         if (!merged_mode_ok(mode_h) || !merged_mode_ok(mode_v) ||
             !merged_mode_ok(mode_d)) {

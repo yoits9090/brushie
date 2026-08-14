@@ -326,6 +326,13 @@ PROFILES = {
     "fine_lo":   "6,1.25,0.8,1.8,1.2,2.5,2.0,0.6",   # finer base
     "lvl_fine_off":  "lF:1.41",                       # coarsen finest detail
     "lvl_fine_off2": "lF:2.0",
+    # geom-lab 2026-08: finer base LL + coarser detail (flat-area error is
+    # base-LL-dominated on UI content; chat .970 bm0.2: 2,434B @ 0.97210 vs
+    # default q39 2,461B @ 0.97103)
+    "base_fine1": "6,1.25,0.8,1.8,1.2,2.5,2.0,0.3",
+    "base_fine2": "6,1.35,0.8,1.8,1.2,2.5,2.0,0.2",
+    "base_fine3": "6,1.45,0.8,1.8,1.2,2.5,2.0,0.2",
+    "base_fine4": "6,1.35,0.8,1.8,1.2,2.5,2.0,0.25",
 }
 
 def _caps_one(ppm_path, q, base, threads, profile):
