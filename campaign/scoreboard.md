@@ -68,6 +68,21 @@ coding at high q + rate allocation + lapped transforms + bitplane refinement.
   WebP 4ms/JPEG 3ms/AVIF 12ms -> ~8ms). coder-lab owns semantics, speed-lab
   owns SIMD path. Mode numbering: geom took 16, coder renumbered to 17.
 
+## UI/text second representation (geom-lab lead, greenlit 2026-08-14)
+geom-lab stage-0 (git 525f8e7): chat .970 stream anatomy - luma detail 49%
+(glyph/avatar edges; text lines quantize away; flats already free via mode 12);
+wavelet-representation FLOOR measured at ~1.5-1.8KB vs AVIF 812B (context bound
+1,095B, zero-order 1,567B, model 1,913B, payload 2,165B). VERDICT: <1,500B
+unreachable in the wavelet domain - second representation required. Stage-1
+run-mode detail (mode 19) rejected (loses to mode 12). Lapped/smooth synthesis
+closed (no free lunch at these rates). base_target=128 worse. BLOCK=32 wins 14B
+but env-derived (not stream-safe) - not shipped.
+DECISION: v8 second representation greenlit as campaign priority for geom-lab:
+palette + edge map (directional contexts) + wavelet residual, trial-selected vs
+wavelet-only; 4x4 directional intra as fallback; target chat .970 -> <1,200B.
+coder-lab routed: chat context headroom (-38% luma detail) + tiny-stream
+overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
