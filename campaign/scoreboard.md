@@ -224,6 +224,27 @@ images (deepens the coverage story).
   pending novelty-lab sims (MANIAC/LS/splines = same upside, lower cost). If all
   three sims fail AND chat >1,600B post-re-gate -> greenlight AV1-lite.
 
+## Novelty-lab sim verdicts (2026-08-14, commit 41a8714, all measured on real v7 streams)
+- SIM A (per-image linear cross-band LS prediction): DEAD. R2(q|features)=0.00..0.09;
+  parent-gated sig contexts + local-k already extract the linear signal; LS-MSE
+  does not transfer to entropy.
+- SIM B (MANIAC adaptive context tree): REAL, BELOW BAR. Sig-pass -3.16% net
+  (meme -11.9..-14.1%, chat -3.6..-5.6%, photos -2.1..-2.9%); sign-pass -3.15%
+  more; stream-level ~-1.7% (sig) / ~-2.3% (sig+sign); tree overhead 654B.
+  Decoder-symmetric; RE-TEST CANDIDATE after rANS/context work if text needs
+  another 2-3%.
+- SIM C (1D spline layer on edges): DEAD. Base too lossy at q30-75
+  (corr(U,Y)=0.72); real edges are anti-aliased ramps not hard steps;
+  quantization bar un-clearable. JXL-style SMOOTH-GRADIENT splines at q75+
+  remain the one untested variant (novelty-lab SIM C-lite in flight).
+- TOOLING: novelty fixed entropy_audit.py - main's audit could NOT walk any
+  current v7 stream (mode-24 state flag, absent band-4 sections, mode-16
+  walker, unary rate); fix verified + merged (62d3d04). Campaign audits now
+  trustworthy for v7.
+- AV1-lite trigger: all three sims failed the bar AND v9 projects chat
+  <=1,400B => AV1-lite resolved DEAD; blind rig is the text-content claim
+  vehicle.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
