@@ -197,6 +197,17 @@ Blind-rig prep: v7 vs AVIF S2-70 head-to-head on 0817x2 = 55.7KB vs 44.3KB
 (1.26x - matches the landscape); AVIF can't clear S2-85 at crf>=16 on several
 images (deepens the coverage story).
 
+## Track changes (2026-08-14)
+- coder-lab mode 25 (block-path text sig contexts): REJECTED (+6% chat/meme,
+  env-gated). Context-modeling book is now CLOSED (modes 13-18, 25 all
+  measured; fixed-context set is the local optimum; remaining coder levers:
+  defaults fold + rANS small-chunk state).
+- Blind rig CLAIM-READY (geom-lab): 40 stimuli, 12 refs, S2-70/85 anchors,
+  CAPS v7 vs AVIF. S2-85: CAPS clears where AVIF doesn't; S2-70 mean 1.22x.
+- speed-lab session WEDGED (405 msgs, stale traceback, hours); branch
+  deprecated (pre-v7 codebase). simd-lab spawned on current main: rANS SIMD
+  decode + pyramid/quantize SIMD + parallel decode, byte-identical mandate.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
