@@ -135,6 +135,19 @@ overhead (+12% vs 1.2-2% photos) for rANS v7 validation.
   streams decode without the env. Approved metric-lab sweep: (q98,q99) x
   QFINE {25,50,60,75,90} x per-group stepmul, gated on S2-85/90 + BA-0.6/0.4.
 
+## AV1-lite trigger math (2026-08-14, geom-lab rANS-era audit)
+rANS chat .970 (q38 b32, 1,791B): payload 1,535B vs model ideal 1,329B
+(state/format overhead ~200B); context bound 1,088B. FLOOR: 1,088B + 64B
+header + ~192B dir = ~1,344B < 1,400B wavelet-wins line. AV1-lite remains
+DEFERRED. Remaining wavelet shots: (a) coder-lab text contexts (241B gap,
+directional/run + better init under rANS exact model), (b) small-chunk rANS
+state-init overhead (chroma detail chunks 24-38% overhead; shared/quantized
+init or tail-chunk folding ~100-150B on chat).
+rANS-era gate numbers (geom, per-image): chat .970 2,358->1,791 (-24%),
+meme 1,796->1,484 (-17.4%), kodak01 15,204->14,548 (-4.3%),
+kodak02 16,739->15,764 (-5.8%). Block-size trial (modes 21/22/23,
+stream-safe) adds -9..-14B on chat/meme.
+
 ## Log
 - 2026-08-12: campaign infra: 2 CPU boxes, total instrumentation, 4 labs,
   corpus headroom maps, entropy audit (coder near context-optimal).
