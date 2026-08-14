@@ -121,5 +121,20 @@
    "0.985": "real metrics landed",
    "0.995": "real metrics landed"
   }
+ },
+ {
+  "tag": "009-v7-rans",
+  "timestamp": "2026-08-14",
+  "gates": {
+   "0.970": 8400,
+   "0.985": 15264,
+   "0.995": 33966
+  },
+  "notes": {
+   "_summary": "v7 rANS backend: -7.9/-5.6/-4.0% vs frozen v5; decode 15-25% wall faster; chat tiny-stream -13%",
+   "0.970": "rANS -7.9%",
+   "0.985": "rANS -5.6%",
+   "0.995": "rANS -4.0%"
+  }
  }
 ]
