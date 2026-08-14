@@ -13,7 +13,7 @@
 namespace brushie {
 namespace {
 
-constexpr std::uint16_t kVersion = 5;
+constexpr std::uint16_t kVersion = 6;
 constexpr std::uint16_t kVersionBandV2 = 2;
 constexpr std::uint16_t kVersionLegacy = 1;
 constexpr std::size_t kHeaderBytes = 64;
@@ -445,19 +445,20 @@ class RangeEncoder {
  public:
   explicit RangeEncoder(std::vector<std::uint8_t>& out) : out_(out) {}
 
-  void encode_bit(std::uint16_t& prob, std::uint32_t bit) {
+  void encode_bit(std::uint16_t& prob, std::uint32_t bit,
+                  unsigned shift = 5) {
     const std::uint32_t bound =
         static_cast<std::uint32_t>((static_cast<std::uint64_t>(range_) >> 11) * prob);
     if (bit == 0) {
       range_ = bound;
       int p = prob;
-      p += (2048 - p) >> 5;
+      p += (2048 - p) >> shift;
       prob = static_cast<std::uint16_t>(p < 2048 ? p : 2047);
     } else {
       low_ += bound;
       range_ -= bound;
       int p = prob;
-      p -= p >> 5;
+      p -= p >> shift;
       prob = static_cast<std::uint16_t>(p > 0 ? p : 1);
     }
     while (range_ < (1u << 24)) {
@@ -499,21 +500,21 @@ class RangeDecoder {
     for (int i = 0; i < 5; ++i) code_ = (code_ << 8) | read_byte();
   }
 
-  std::uint32_t decode_bit(std::uint16_t& prob) {
+  std::uint32_t decode_bit(std::uint16_t& prob, unsigned shift = 5) {
     const std::uint32_t bound =
         static_cast<std::uint32_t>((static_cast<std::uint64_t>(range_) >> 11) * prob);
     std::uint32_t bit;
     if (code_ < bound) {
       range_ = bound;
       int p = prob;
-      p += (2048 - p) >> 5;
+      p += (2048 - p) >> shift;
       prob = static_cast<std::uint16_t>(p < 2048 ? p : 2047);
       bit = 0;
     } else {
       code_ -= bound;
       range_ -= bound;
       int p = prob;
-      p -= p >> 5;
+      p -= p >> shift;
       prob = static_cast<std::uint16_t>(p > 0 ? p : 1);
       bit = 1;
     }
@@ -563,8 +564,14 @@ class RangeDecoder {
 //   v4 mode 4:       parent sig+sign (16/8), unary 24 + class*6 + pos, rem 48..60
 //   v4 mode 5:       parent sig only (16),   unary 20 + pos,            rem 44..56
 //   v4 mode 6:       no parent (8/4),        unary 24 + class*6 + pos,  rem 48..60
+//   v6 mode 13:      parent-block magnitude contexts (sig 32 = ctx8+class*8,
+//                    sign 32..35, unary 36 + class*6 + pos, rem 60..71)
+//   v6 mode 14:      mode 13 + magnitude value prediction from the parent
+//                    2x2 block mean (zigzag residual, local residual-scale k)
+//   v6 mode 15:      AUREA-style energy-bucket significance contexts
+//                    (BRUSHIE_EBUCKETS=8|16|32, default 8)
 constexpr unsigned kCtxBlk = 4;  // block-flag neighbour contexts (mode 12)
-constexpr unsigned kNumCtx = 65;
+constexpr unsigned kNumCtx = 128;  // mode 15 energy buckets may use 64 sig ctxs
 
 static bool legacy_layout(std::uint16_t version, std::uint8_t mode) {
   return version < 4 && mode == 3;
@@ -590,6 +597,107 @@ static unsigned unary_idx(std::uint16_t version, std::uint8_t mode,
 static unsigned rem_idx(std::uint16_t version, std::uint8_t mode, unsigned i) {
   if (legacy_layout(version, mode)) return 36u + i;
   return (mode == 4 || mode == 6) ? 48u + i : 44u + i;
+}
+
+// Mode 13/14 (parent-block magnitude) layouts. Each chunk owns a fresh
+// BandProbs array, so these indices may overlap historical layouts.
+static bool parent_mag_mode(std::uint8_t mode) { return mode == 13 || mode == 14; }
+static unsigned sig_idx_pm(unsigned ctx8, unsigned pclass) {
+  return ctx8 + pclass * 8u;  // 0..31
+}
+static unsigned sign_idx_pm(unsigned ctx4) { return 32u + ctx4; }
+static unsigned unary_idx_pm(unsigned pos, unsigned pclass) {
+  return 36u + pclass * 6u + std::min(pos, 5u);  // 36..59
+}
+static unsigned rem_idx_pm(unsigned i) { return 60u + i; }  // 60..71
+
+// Adaptation rate for the unary quotient pass only. The unary contexts show
+// ~8% adaptation lag against the static optimum at the .985 operating point;
+// v6 streams adapt at 1/16 (BRUSHIE_UNARY_RATE=3..8 overrides). v5 and older
+// streams keep the historical 1/32 rate so they stay decodable.
+static unsigned unary_adapt_shift(std::uint16_t version) {
+  if (version < 6) return 5u;
+  static const unsigned shift = []() {
+    const char* e = std::getenv("BRUSHIE_UNARY_RATE");
+    if (!e) return 4u;
+    const int v = std::atoi(e);
+    return (v >= 3 && v <= 8) ? static_cast<unsigned>(v) : 4u;
+  }();
+  return shift;
+}
+
+// Mode 15: AUREA-style energy-bucket significance contexts. The causal
+// magnitude sum |L|+|A|+|AL| is bucketed linearly (BRUSHIE_EBUCKETS, default
+// 8) and crossed with the parent-significance gate, replacing the 3 binary
+// neighbour flags. Everything else is the mode-8 layout.
+static bool energy_bucket_mode(std::uint8_t mode) { return mode == 15; }
+static unsigned energy_bucket_count() {
+  static const unsigned nb = []() {
+    const char* e = std::getenv("BRUSHIE_EBUCKETS");
+    if (!e) return 8u;
+    const int v = std::atoi(e);
+    return (v == 8 || v == 16 || v == 32) ? static_cast<unsigned>(v) : 8u;
+  }();
+  return nb;
+}
+static unsigned energy_bucket_sum(const std::int32_t* band, std::uint32_t stride,
+                                  std::uint32_t x, std::uint32_t y) {
+  std::uint32_t s = 0;
+  if (x > 0) {
+    const std::int32_t l = band[static_cast<std::size_t>(y) * stride + x - 1];
+    s += static_cast<std::uint32_t>(l < 0 ? -l : l);
+  }
+  if (y > 0) {
+    const std::int32_t a = band[static_cast<std::size_t>(y - 1) * stride + x];
+    s += static_cast<std::uint32_t>(a < 0 ? -a : a);
+  }
+  if (x > 0 && y > 0) {
+    const std::int32_t al = band[static_cast<std::size_t>(y - 1) * stride + x - 1];
+    s += static_cast<std::uint32_t>(al < 0 ? -al : al);
+  }
+  return std::min(s, energy_bucket_count() - 1);
+}
+static unsigned sig_idx15(unsigned bucket, bool parent_sig) {
+  return bucket + (parent_sig ? energy_bucket_count() : 0u);
+}
+
+// Per-child-coefficient features of the 2x2 parent block (the block that
+// collapses into one parent coefficient), in CHILD-quantized units:
+//   scaled = (parent_mag * scale_num) / scale_den   (truncating, exact both sides)
+// Encoder: parent holds quantized q, scale = (parent_step, child_step).
+// Decoder: parent holds q*parent_step, scale = (1, child_step).
+// pclass: class of the block max {0,1,2..3,4+}; pmean: rounded block mean.
+static void parent_block_features(const std::int32_t* parent,
+                                  std::uint32_t stride, std::uint32_t pw,
+                                  std::uint32_t ph, std::uint32_t scale_num,
+                                  std::uint32_t scale_den, std::uint32_t w,
+                                  std::uint32_t h,
+                                  std::vector<std::uint8_t>& pclass,
+                                  std::vector<std::uint32_t>& pmean) {
+  pclass.assign(static_cast<std::size_t>(w) * h, 0);
+  pmean.assign(static_cast<std::size_t>(w) * h, 0);
+  if (!parent || pw == 0 || ph == 0) return;
+  const auto mag = [&](std::uint32_t px, std::uint32_t py) -> std::uint64_t {
+    const std::int32_t v = parent[static_cast<std::size_t>(py) * stride + px];
+    return static_cast<std::uint64_t>(v < 0 ? -static_cast<std::int64_t>(v) : v);
+  };
+  for (std::uint32_t y = 0; y < h; ++y) {
+    const std::uint32_t py = std::min(y / 2, ph - 1);
+    const std::uint32_t py1 = std::min(py + 1, ph - 1);
+    for (std::uint32_t x = 0; x < w; ++x) {
+      const std::uint32_t px = std::min(x / 2, pw - 1);
+      const std::uint32_t px1 = std::min(px + 1, pw - 1);
+      const std::uint64_t s0 = (mag(px, py) * scale_num) / scale_den;
+      const std::uint64_t s1 = (mag(px1, py) * scale_num) / scale_den;
+      const std::uint64_t s2 = (mag(px, py1) * scale_num) / scale_den;
+      const std::uint64_t s3 = (mag(px1, py1) * scale_num) / scale_den;
+      const std::uint64_t mx = std::max(std::max(s0, s1), std::max(s2, s3));
+      const std::size_t i = static_cast<std::size_t>(y) * w + x;
+      pclass[i] = static_cast<std::uint8_t>(
+          mx == 0 ? 0u : (mx == 1 ? 1u : (mx <= 3 ? 2u : 3u)));
+      pmean[i] = static_cast<std::uint32_t>((s0 + s1 + s2 + s3 + 2) / 4);
+    }
+  }
 }
 
 struct BandProbs {
@@ -845,11 +953,43 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
                               std::uint32_t parent_stride,
                               std::uint32_t parent_w, std::uint32_t parent_h,
                               std::uint8_t mode,
+                              std::uint32_t step_child,
+                              std::uint32_t step_parent,
                               std::vector<std::uint8_t>& out) {
+  const bool use_parent = parent != nullptr;
+  // Mode 13/14: parent-block features in child-quantized units. The encoder
+  // scales the quantized parent by step_parent/step_child; the decoder gets
+  // the same values as (dequantized_parent)/step_child.
+  std::vector<std::uint8_t> pclass_arr;
+  std::vector<std::uint32_t> pmean_arr;
+  if (parent_mag_mode(mode) && use_parent) {
+    parent_block_features(parent, parent_stride, parent_w, parent_h,
+                          step_child ? step_parent : 0, step_child, w, h,
+                          pclass_arr, pmean_arr);
+  }
   int k0 = 0;
   if (nonzero != 0) {
-    const std::uint64_t v = abs_sum / nonzero;
-    while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
+    if (mode == 14 && use_parent) {
+      // Band floor on the residual magnitude scale (prediction residuals,
+      // not raw magnitudes).
+      std::uint64_t rsum = 0;
+      for (std::uint32_t y = 0; y < h; ++y) {
+        for (std::uint32_t x = 0; x < w; ++x) {
+          const std::int32_t v = band[static_cast<std::size_t>(y) * w + x];
+          if (v == 0) continue;
+          const std::int64_t m_orig = static_cast<std::int64_t>(v < 0 ? -v : v) - 1;
+          const std::size_t fi = static_cast<std::size_t>(y) * w + x;
+          const std::int64_t d = m_orig - static_cast<std::int64_t>(pmean_arr[fi]);
+          rsum += d >= 0 ? static_cast<std::uint64_t>(2 * d)
+                         : static_cast<std::uint64_t>(-2 * d - 1);
+        }
+      }
+      const std::uint64_t v = rsum / nonzero;
+      while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
+    } else {
+      const std::uint64_t v = abs_sum / nonzero;
+      while (k0 < 12 && (std::uint64_t{1} << (k0 + 1)) <= v) ++k0;
+    }
   }
   out.push_back(static_cast<std::uint8_t>(k0));
   RangeEncoder enc(out);
@@ -857,7 +997,6 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
   int k = k0;
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
-  const bool use_parent = parent != nullptr;
   if (mode == 12) {
     // Block significance flags (16x16): a zero block costs one context bit
     // and skips every coefficient symbol inside it (EBCOT-style codeblocks).
@@ -919,8 +1058,10 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
               const std::uint32_t qq = m >> kk;
               const std::uint32_t rr = m & ((1u << kk) - 1u);
               for (std::uint32_t i = 0; i < qq; ++i)
-                enc.encode_bit(probs.p[unary_idx(4, mode, i, 0)], 0);
-              enc.encode_bit(probs.p[unary_idx(4, mode, qq, 0)], 1);
+                enc.encode_bit(probs.p[unary_idx(4, mode, i, 0)], 0,
+                               unary_adapt_shift(6));
+              enc.encode_bit(probs.p[unary_idx(4, mode, qq, 0)], 1,
+                             unary_adapt_shift(6));
               for (unsigned i = 0; i < static_cast<unsigned>(kk); ++i)
                 enc.encode_bit(probs.p[rem_idx(4, mode, i)], (rr >> i) & 1u);
               mag_sum += m_orig;
@@ -1101,6 +1242,16 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
           s = (q != 0) ? 1u : 0u;
           enc.encode_bit(probs.p[sg], s);
         }
+      } else if (parent_mag_mode(mode) && use_parent) {
+        const std::size_t fi = static_cast<std::size_t>(y) * w + x;
+        const unsigned sg = sig_idx_pm(ctx, pclass_arr[fi]);
+        s = (q != 0) ? 1u : 0u;
+        enc.encode_bit(probs.p[sg], s);
+      } else if (energy_bucket_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx15(energy_bucket_sum(band, w, x, y),
+                                      pv != 0);
+        s = (q != 0) ? 1u : 0u;
+        enc.encode_bit(probs.p[sg], s);
       } else {
         const unsigned sg = sig_idx(4, mode, ctx, use_parent && pv != 0);
         s = (q != 0) ? 1u : 0u;
@@ -1108,14 +1259,61 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
       }
       if (s) {
         const std::uint32_t sign = q < 0 ? 1u : 0u;
-        const unsigned sign_ctx = sign_idx(4, mode, sign_context(band, w, x, y),
-                                           use_parent && pv < 0);
+        const unsigned sign_ctx = parent_mag_mode(mode) && use_parent
+                                      ? sign_idx_pm(sign_context(band, w, x, y))
+                                      : sign_idx(4, mode,
+                                                 sign_context(band, w, x, y),
+                                                 use_parent && pv < 0);
         enc.encode_bit(probs.p[sign_ctx], sign);
         const std::uint32_t m_orig = static_cast<std::uint32_t>(q < 0 ? -q : q) - 1u;
         std::uint32_t m = m_orig;
         std::uint32_t qq, rr;
         int kk = k;
-        if (mode == 9) {
+        unsigned uclass = 0;
+        if (parent_mag_mode(mode) && use_parent) {
+          const std::size_t fi = static_cast<std::size_t>(y) * w + x;
+          uclass = pclass_arr[fi];
+          if (mode == 14) {
+            const std::int64_t d = static_cast<std::int64_t>(m_orig) -
+                                   static_cast<std::int64_t>(pmean_arr[fi]);
+            m = d >= 0 ? static_cast<std::uint32_t>(2 * d)
+                       : static_cast<std::uint32_t>(-2 * d - 1);
+            std::uint32_t rl = 0, ra = 0;
+            if (x > 0 && band[fi - 1] != 0) {
+              const std::size_t li = fi - 1;
+              const std::int64_t dl =
+                  static_cast<std::int64_t>(
+                      static_cast<std::uint32_t>(band[li] < 0 ? -band[li] : band[li]) - 1u) -
+                  static_cast<std::int64_t>(pmean_arr[li]);
+              rl = dl >= 0 ? static_cast<std::uint32_t>(2 * dl)
+                           : static_cast<std::uint32_t>(-2 * dl - 1);
+            }
+            if (y > 0 && band[fi - w] != 0) {
+              const std::size_t ai = fi - w;
+              const std::int64_t da =
+                  static_cast<std::int64_t>(
+                      static_cast<std::uint32_t>(band[ai] < 0 ? -band[ai] : band[ai]) - 1u) -
+                  static_cast<std::int64_t>(pmean_arr[ai]);
+              ra = da >= 0 ? static_cast<std::uint32_t>(2 * da)
+                           : static_cast<std::uint32_t>(-2 * da - 1);
+            }
+            const std::uint32_t mean1 = (rl + ra) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            kk = std::max(nk, k);
+          } else {
+            const std::int32_t lv13 = x > 0 ? band[static_cast<std::size_t>(y) * w + x - 1] : 0;
+            const std::int32_t av13 = y > 0 ? band[static_cast<std::size_t>(y - 1) * w + x] : 0;
+            const std::uint32_t ml = static_cast<std::uint32_t>(lv13 < 0 ? -lv13 : lv13);
+            const std::uint32_t ma = static_cast<std::uint32_t>(av13 < 0 ? -av13 : av13);
+            const std::uint32_t mean1 = (ml + ma) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            kk = std::max(nk, k);
+          }
+          qq = m >> kk;
+          rr = m & ((1u << kk) - 1u);
+        } else if (mode == 9) {
           // Magnitude prediction: the local min(|left|,|above|) predicts the
           // magnitude; the zigzag residual keeps Rice coding non-negative and
           // peaks at zero for edges/regions with smooth magnitude fields.
@@ -1143,21 +1341,35 @@ static void encode_band_arith(const std::int32_t* band, std::uint32_t w,
           kk = std::max(nk, k);   // band-adapted k is the floor
           qq = m >> kk;
           rr = m & ((1u << kk) - 1u);
-        } else {
+        } else if (!parent_mag_mode(mode)) {
           qq = m >> k;
           rr = m & ((1u << k) - 1u);
         }
         const std::int32_t lv = x > 0 ? band[static_cast<std::size_t>(y) * w + x - 1] : 0;
         const std::int32_t av = y > 0 ? band[static_cast<std::size_t>(y - 1) * w + x] : 0;
         const unsigned mclass = std::min(mag_class(lv), mag_class(av));
-        for (std::uint32_t i = 0; i < qq; ++i)
-          enc.encode_bit(probs.p[unary_idx(4, mode, i, mclass)], 0);
-        enc.encode_bit(probs.p[unary_idx(4, mode, qq, mclass)], 1);
-        for (int i = 0; i < kk; ++i)
-          enc.encode_bit(probs.p[rem_idx(4, mode, static_cast<unsigned>(i))], (rr >> i) & 1u);
+        if (parent_mag_mode(mode) && use_parent) {
+          for (std::uint32_t i = 0; i < qq; ++i)
+            enc.encode_bit(probs.p[unary_idx_pm(i, uclass)], 0,
+                           unary_adapt_shift(6));
+          enc.encode_bit(probs.p[unary_idx_pm(qq, uclass)], 1,
+                         unary_adapt_shift(6));
+          for (int i = 0; i < kk; ++i)
+            enc.encode_bit(probs.p[rem_idx_pm(static_cast<unsigned>(i))], (rr >> i) & 1u);
+        } else {
+          for (std::uint32_t i = 0; i < qq; ++i)
+            enc.encode_bit(probs.p[unary_idx(4, mode, i, mclass)], 0,
+                           unary_adapt_shift(6));
+          enc.encode_bit(probs.p[unary_idx(4, mode, qq, mclass)], 1,
+                         unary_adapt_shift(6));
+          for (int i = 0; i < kk; ++i)
+            enc.encode_bit(probs.p[rem_idx(4, mode, static_cast<unsigned>(i))], (rr >> i) & 1u);
+        }
 
         
-        mag_sum += m_orig;
+        // k adaptation tracks the coded quantity: residuals for mode 14
+        // (m == residual), raw magnitudes otherwise (m == m_orig for 13/8/...).
+        mag_sum += (mode == 9) ? m_orig : m;
         ++mag_count;
         if (mag_count == 64) {
           const std::uint64_t v = mag_sum / 64;
@@ -1201,6 +1413,19 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
   std::uint64_t mag_sum = 0;
   unsigned mag_count = 0;
   const bool use_parent = parent != nullptr;
+  // Mode 13/14: parent-block features in child-quantized units. The parent
+  // buffer holds dequantized values (q * parent_step) here; dividing by the
+  // child step reproduces exactly what the encoder scaled from q.
+  std::vector<std::uint8_t> pclass_arr;
+  std::vector<std::uint32_t> pmean_arr;
+  if (parent_mag_mode(mode) && use_parent) {
+    if (step == 0) {
+      fail(error, "invalid step for parent-magnitude band");
+      return false;
+    }
+    parent_block_features(parent, parent_stride, parent_w, parent_h, 1, step,
+                          tw, th, pclass_arr, pmean_arr);
+  }
   if (mode == 12) {
     static const std::uint32_t kB = []() {
       const char* e = std::getenv("BRUSHIE_BLOCK");
@@ -1250,7 +1475,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
               }
               for (;;) {
                 const std::uint32_t uctx = unary_idx(version, mode, qq, 0);
-                const std::uint32_t bit = dec.decode_bit(probs.p[uctx]);
+                const std::uint32_t bit = dec.decode_bit(probs.p[uctx],
+                                                         unary_adapt_shift(version));
                 if (bit) break;
                 ++qq;
                 if (qq > 65536u) {
@@ -1455,18 +1681,64 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         } else {
           s = dec.decode_bit(probs.p[sig_idx(version, mode, raw_ctx, false)]);
         }
+      } else if (parent_mag_mode(mode) && use_parent) {
+        const std::size_t fi = static_cast<std::size_t>(y) * stride + x;
+        s = dec.decode_bit(probs.p[sig_idx_pm(raw_ctx, pclass_arr[fi])]);
+      } else if (energy_bucket_mode(mode) && use_parent) {
+        const unsigned sg = sig_idx15(energy_bucket_sum(dest, stride, x, y),
+                                      pv != 0);
+        s = dec.decode_bit(probs.p[sg]);
       } else {
         s = dec.decode_bit(probs.p[sig_idx(version, mode, raw_ctx,
                                            use_parent && pv != 0)]);
       }
       std::int32_t q = 0;
       if (s) {
-        const unsigned sign_ctx = sign_idx(version, mode, sign_context(dest, stride, x, y),
-                                           use_parent && pv < 0);
+        const unsigned sign_ctx = parent_mag_mode(mode) && use_parent
+                                      ? sign_idx_pm(sign_context(dest, stride, x, y))
+                                      : sign_idx(version, mode,
+                                                 sign_context(dest, stride, x, y),
+                                                 use_parent && pv < 0);
         const std::uint32_t sign = dec.decode_bit(probs.p[sign_ctx]);
         std::uint32_t qq = 0;
         int kk = k;
-        if (mode == 8 || mode == 9) {
+        const std::size_t fi = static_cast<std::size_t>(y) * stride + x;
+        if (parent_mag_mode(mode) && use_parent) {
+          if (mode == 14) {
+            std::uint32_t rl = 0, ra = 0;
+            if (x > 0 && dest[fi - 1] != 0) {
+              const std::size_t li = fi - 1;
+              const std::int64_t dl =
+                  static_cast<std::int64_t>(
+                      static_cast<std::uint32_t>(dest[li] < 0 ? -dest[li] : dest[li]) - 1u) -
+                  static_cast<std::int64_t>(pmean_arr[li]);
+              rl = dl >= 0 ? static_cast<std::uint32_t>(2 * dl)
+                           : static_cast<std::uint32_t>(-2 * dl - 1);
+            }
+            if (y > 0 && dest[fi - stride] != 0) {
+              const std::size_t ai = fi - stride;
+              const std::int64_t da =
+                  static_cast<std::int64_t>(
+                      static_cast<std::uint32_t>(dest[ai] < 0 ? -dest[ai] : dest[ai]) - 1u) -
+                  static_cast<std::int64_t>(pmean_arr[ai]);
+              ra = da >= 0 ? static_cast<std::uint32_t>(2 * da)
+                           : static_cast<std::uint32_t>(-2 * da - 1);
+            }
+            const std::uint32_t mean1 = (rl + ra) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            kk = std::max(nk, k);
+          } else {
+            const std::int32_t lv13 = x > 0 ? dest[fi - 1] : 0;
+            const std::int32_t av13 = y > 0 ? dest[fi - stride] : 0;
+            const std::uint32_t ml = static_cast<std::uint32_t>(lv13 < 0 ? -lv13 : lv13);
+            const std::uint32_t ma = static_cast<std::uint32_t>(av13 < 0 ? -av13 : av13);
+            const std::uint32_t mean1 = (ml + ma) / 2 + 1u;
+            int nk = 0;
+            while (nk < 12 && (std::uint32_t{1} << (nk + 1)) <= mean1) ++nk;
+            kk = std::max(nk, k);
+          }
+        } else if (mode == 8 || mode == 9) {
           const std::int32_t lv8 = x > 0 ? dest[static_cast<std::size_t>(y) * stride + x - 1] : 0;
           const std::int32_t av8 = y > 0 ? dest[static_cast<std::size_t>(y - 1) * stride + x] : 0;
           std::uint32_t ml = static_cast<std::uint32_t>(lv8 < 0 ? -lv8 : lv8);
@@ -1480,6 +1752,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
           std::uint32_t uctx;
           if (v2_entropy_layout) {
             uctx = 12u + std::min<std::uint32_t>(qq, 13u);
+          } else if (parent_mag_mode(mode) && use_parent) {
+            uctx = unary_idx_pm(qq, pclass_arr[fi]);
           } else if (mode == 4 || mode == 6) {
             const std::int32_t lv = x > 0 ? dest[static_cast<std::size_t>(y) * stride + x - 1] : 0;
             const std::int32_t av = y > 0 ? dest[static_cast<std::size_t>(y - 1) * stride + x] : 0;
@@ -1488,7 +1762,8 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
           } else {
             uctx = unary_idx(version, mode, qq, 0);
           }
-          const std::uint32_t bit = dec.decode_bit(probs.p[uctx]);
+          const std::uint32_t bit = dec.decode_bit(probs.p[uctx],
+                                                   unary_adapt_shift(version));
           if (bit) break;
           ++qq;
           if (qq > 65536u) {
@@ -1501,8 +1776,16 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
           // Historical v2 quirk: ALL remainder bits share one context (26).
           const unsigned rem_context = v2_entropy_layout
               ? 26u
-              : rem_idx(version, mode, i);
+              : (parent_mag_mode(mode) && use_parent ? rem_idx_pm(i)
+                                                     : rem_idx(version, mode, i));
           m |= dec.decode_bit(probs.p[rem_context]) << i;
+        }
+        const std::uint32_t m_decoded = m;
+        if (parent_mag_mode(mode) && mode == 14 && use_parent) {
+          const std::uint32_t z = m;
+          const std::uint32_t d = (z + (z & 1u)) >> 1;
+          const bool neg = (z & 1u) != 0;
+          m = neg ? pmean_arr[fi] - d : pmean_arr[fi] + d;
         }
         if (mode == 9) {
           const std::int32_t lv9 = x > 0 ? dest[static_cast<std::size_t>(y) * stride + x - 1] : 0;
@@ -1517,7 +1800,11 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
         }
         q = static_cast<std::int32_t>(m) + 1;
         if (sign) q = -q;
-        mag_sum += m;
+        // k adaptation tracks the coded quantity: residuals for mode 14,
+        // raw magnitudes otherwise (mirrors the encoder).
+        mag_sum += (parent_mag_mode(mode) && mode == 14 && use_parent)
+                       ? m_decoded
+                       : m;
         ++mag_count;
         if (mag_count == 64) {
           const std::uint64_t v = mag_sum / 64;
@@ -1564,7 +1851,11 @@ static bool decode_band_arith(const std::uint8_t* data, std::size_t size,
     const double v = std::atof(e);
     return (v > 0.0 && v <= 1.0) ? v : 1.0;
   }();
-  const bool apply_damp = damp < 1.0 && !use_prediction;
+  // Mode 13/14 bands feed children as parents: their reconstructed values
+  // must stay exact q*step for the parent-block scaling to match the
+  // encoder, so damping is disabled for them (parents are either base bands,
+  // which never damp, or other 13/14 bands).
+  const bool apply_damp = damp < 1.0 && !use_prediction && mode < 13;
   for (std::uint32_t i = 0; i < count; ++i) {
     const std::int64_t q = dest[i];
     double value = static_cast<double>(q) * step;
@@ -1759,7 +2050,7 @@ static bool test_encode_band(const std::int32_t* band, std::uint32_t w,
   quantize_band(tmp, step, nonzero, abs_sum);
   if (nonzero == 0) return false;
   encode_band_arith(tmp.data(), w, h, use_prediction, nonzero, abs_sum,
-                     nullptr, 0, 0, 0, 3, out);
+                     nullptr, 0, 0, 0, 3, step, 1, out);
   return true;
 }
 static bool test_decode_band(const std::uint8_t* data, std::size_t size,
@@ -1931,7 +2222,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     if (!e) return static_cast<std::uint8_t>(8);  // local-k won A/B
     const int v = std::atoi(e);
     return (v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 ||
-            v == 9 || v == 10 || v == 11 || v == 12)
+            v == 9 || v == 10 || v == 11 || v == 12 || v == 13 || v == 14 ||
+            v == 15)
                ? static_cast<std::uint8_t>(v)
                : static_cast<std::uint8_t>(8);
   }();
@@ -1979,7 +2271,9 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                       as_list[i], parent, parent_stride,
                       r.layer > 0 ? refs[parent_of(i)].w : 0,
                       r.layer > 0 ? refs[parent_of(i)].h : 0,
-                      r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode, payload);
+                      r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode,
+                      chosen_step[i],
+                      r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
     band_bytes[i] = payload.size();
     band_active[i] = 1;
     if (brushie::track::enabled()) {
@@ -2185,6 +2479,8 @@ bool encode(const ImageView& image, const EncodeOptions& options,
                               r.layer > 0 ? refs[parent_of(ri)].w : 0,
                               r.layer > 0 ? refs[parent_of(ri)].h : 0,
                               r.layer == 0 ? (use_gap ? 7 : 3) : detail_mode,
+                              cand_steps[ri],
+                              r.layer > 0 ? cand_steps[parent_of(ri)] : 1,
                               payload);
             cand_bytes[ri] = payload.size();
             cand_act[ri] = 1;
@@ -2416,9 +2712,11 @@ bool encode(const ImageView& image, const EncodeOptions& options,
     if (base_trial) {
       std::vector<std::uint8_t> p3, p16;
       encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
-                        as_list[i], parent, parent_stride, 0, 0, 3, p3);
+                        as_list[i], parent, parent_stride, 0, 0, 3,
+                        chosen_step[i], 1, p3);
       encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
-                        as_list[i], parent, parent_stride, 0, 0, 16, p16);
+                        as_list[i], parent, parent_stride, 0, 0, 16,
+                        chosen_step[i], 1, p16);
       if (p16.size() < p3.size()) {
         c.mode = 16;
         payload = std::move(p16);
@@ -2429,7 +2727,9 @@ bool encode(const ImageView& image, const EncodeOptions& options,
       encode_band_arith(quant[i].data(), r.w, r.h, r.predict, nz_list[i],
                         as_list[i], parent, parent_stride,
                         r.layer > 0 ? refs[parent_of(i)].w : 0,
-                        r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode, payload);
+                        r.layer > 0 ? refs[parent_of(i)].h : 0, c.mode,
+                        chosen_step[i],
+                        r.layer > 0 ? chosen_step[parent_of(i)] : 1, payload);
     }
     c.payload = std::move(payload);
     active[i] = 1;
@@ -3133,7 +3433,8 @@ bool decode(const std::uint8_t* data, std::size_t size,
     return false;
   }
   const std::uint16_t version = get_u16(data + 4);
-  if (version == kVersion || version == 4 || version == 3 || version == kVersionBandV2)
+  if (version == kVersion || version == 5 || version == 4 || version == 3 ||
+      version == kVersionBandV2)
     return decode_v2(data, size, output_width, output_height, rgb,
                      max_progressive_layer, error);
   if (version == kVersionLegacy) return decode_v1(data, size, output_width, output_height, rgb, max_progressive_layer, error);
